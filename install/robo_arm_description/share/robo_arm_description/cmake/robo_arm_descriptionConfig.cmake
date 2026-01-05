@@ -1,0 +1,1 @@
+/home/hku/robo_arm/build/robo_arm_description/ament_cmake_core/robo_arm_descriptionConfig.cmake

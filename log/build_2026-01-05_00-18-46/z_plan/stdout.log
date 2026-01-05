@@ -1,0 +1,24 @@
+[ 50%] [32mBuilding CXX object CMakeFiles/z_plan_node.dir/src/z_plan_node.cpp.o[0m
+[100%] [32m[1mLinking CXX executable z_plan_node[0m
+[100%] Built target z_plan_node
+-- Install configuration: ""
+-- Installing: /home/hku/robo_arm/install/z_plan/lib/z_plan/z_plan_node
+-- Set non-toolchain portion of runtime path of "/home/hku/robo_arm/install/z_plan/lib/z_plan/z_plan_node" to ""
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/launch
+-- Installing: /home/hku/robo_arm/install/z_plan/share/z_plan/launch/z_plan.launch.py
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/config
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/ament_index/resource_index/package_run_dependencies/z_plan
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/ament_index/resource_index/parent_prefix_path/z_plan
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/environment/ament_prefix_path.sh
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/environment/ament_prefix_path.dsv
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/environment/path.sh
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/environment/path.dsv
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/local_setup.bash
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/local_setup.sh
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/local_setup.zsh
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/local_setup.dsv
+-- Installing: /home/hku/robo_arm/install/z_plan/share/z_plan/package.dsv
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/ament_index/resource_index/packages/z_plan
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/cmake/z_planConfig.cmake
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/cmake/z_planConfig-version.cmake
+-- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/package.xml

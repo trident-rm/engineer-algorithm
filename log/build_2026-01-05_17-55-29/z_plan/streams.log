@@ -1,0 +1,26 @@
+[0.014s] Invoking command in '/home/hku/robo_arm/build/z_plan': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/hku/ws_moveit/install/moveit_configs_utils:/home/hku/ws_moveit2/install/moveit_configs_utils:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/hku/robo_arm/build/z_plan -- -j16 -l16
+[0.101s] [100%] Built target z_plan_node
+[0.114s] Invoked command in '/home/hku/robo_arm/build/z_plan' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/hku/ws_moveit/install/moveit_configs_utils:/home/hku/ws_moveit2/install/moveit_configs_utils:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/hku/robo_arm/build/z_plan -- -j16 -l16
+[0.129s] Invoking command in '/home/hku/robo_arm/build/z_plan': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/hku/ws_moveit/install/moveit_configs_utils:/home/hku/ws_moveit2/install/moveit_configs_utils:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/hku/robo_arm/build/z_plan
+[0.137s] -- Install configuration: ""
+[0.138s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/lib/z_plan/z_plan_node
+[0.138s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/launch
+[0.138s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/launch/z_plan.launch.py
+[0.138s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/config
+[0.138s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/config/move_group.yaml
+[0.139s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/ament_index/resource_index/package_run_dependencies/z_plan
+[0.139s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/ament_index/resource_index/parent_prefix_path/z_plan
+[0.139s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/environment/ament_prefix_path.sh
+[0.139s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/environment/ament_prefix_path.dsv
+[0.139s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/environment/path.sh
+[0.139s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/environment/path.dsv
+[0.139s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/local_setup.bash
+[0.139s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/local_setup.sh
+[0.139s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/local_setup.zsh
+[0.139s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/local_setup.dsv
+[0.139s] -- Installing: /home/hku/robo_arm/install/z_plan/share/z_plan/package.dsv
+[0.140s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/ament_index/resource_index/packages/z_plan
+[0.140s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/cmake/z_planConfig.cmake
+[0.140s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/cmake/z_planConfig-version.cmake
+[0.140s] -- Up-to-date: /home/hku/robo_arm/install/z_plan/share/z_plan/package.xml
+[0.141s] Invoked command in '/home/hku/robo_arm/build/z_plan' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/hku/ws_moveit/install/moveit_configs_utils:/home/hku/ws_moveit2/install/moveit_configs_utils:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/hku/robo_arm/build/z_plan

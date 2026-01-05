@@ -1,0 +1,28 @@
+-- Found ament_cmake: 2.5.4 (/opt/ros/jazzy/share/ament_cmake/cmake)
+-- Override CMake install command with custom implementation using symlinks instead of copying resources
+-- Configuring done (0.3s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/hku/robo_arm/build/robo_arm_moveit_config
+-- Install configuration: ""
+-- Execute custom install script
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/config/controllers.yaml
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/config/kinematics.yaml
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/config/moveit.rviz
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/config/ompl_planning.yaml
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/config/robo_arm.srdf
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/launch/demo.launch.py
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/ament_index/resource_index/package_run_dependencies/robo_arm_moveit_config
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/ament_index/resource_index/parent_prefix_path/robo_arm_moveit_config
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/environment/ament_prefix_path.sh
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/environment/ament_prefix_path.dsv
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/environment/path.sh
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/environment/path.dsv
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/local_setup.bash
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/local_setup.sh
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/local_setup.zsh
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/local_setup.dsv
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/package.dsv
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/ament_index/resource_index/packages/robo_arm_moveit_config
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/cmake/robo_arm_moveit_configConfig.cmake
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/cmake/robo_arm_moveit_configConfig-version.cmake
+-- Symlinking: /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/package.xml

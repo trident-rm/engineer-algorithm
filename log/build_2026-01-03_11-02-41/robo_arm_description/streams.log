@@ -1,0 +1,59 @@
+[0.020s] Invoking command in '/home/hku/robo_arm/build/robo_arm_description': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/hku/ws_moveit/install/moveit_configs_utils:/home/hku/ws_moveit2/install/moveit_configs_utils:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/hku/robo_arm/build/robo_arm_description -- -j16 -l16
+[0.076s] -- Found ament_cmake: 2.5.4 (/opt/ros/jazzy/share/ament_cmake/cmake)
+[0.315s] -- Override CMake install command with custom implementation using symlinks instead of copying resources
+[0.320s] -- Found rclcpp: 28.1.13 (/opt/ros/jazzy/share/rclcpp/cmake)
+[0.354s] -- Found rosidl_generator_c: 4.6.6 (/opt/ros/jazzy/share/rosidl_generator_c/cmake)
+[0.362s] -- Found rosidl_generator_cpp: 4.6.6 (/opt/ros/jazzy/share/rosidl_generator_cpp/cmake)
+[0.380s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[0.396s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[0.464s] -- Found rmw_implementation_cmake: 7.3.2 (/opt/ros/jazzy/share/rmw_implementation_cmake/cmake)
+[0.473s] -- Found rmw_fastrtps_cpp: 8.4.3 (/opt/ros/jazzy/share/rmw_fastrtps_cpp/cmake)
+[0.552s] -- Using RMW implementation 'rmw_fastrtps_cpp' as default
+[0.612s] -- Found tf2_ros: 0.36.16 (/opt/ros/jazzy/share/tf2_ros/cmake)
+[0.755s] -- Found tf2_geometry_msgs: 0.36.16 (/opt/ros/jazzy/share/tf2_geometry_msgs/cmake)
+[0.802s] -- Found eigen3_cmake_module: 0.3.0 (/opt/ros/jazzy/share/eigen3_cmake_module/cmake)
+[0.804s] -- Found Eigen3: TRUE (found version "3.4.0") 
+[0.804s] -- Ensuring Eigen3 include directory is part of orocos-kdl CMake target
+[0.807s] -- Found ament_lint_auto: 0.17.3 (/opt/ros/jazzy/share/ament_lint_auto/cmake)
+[0.957s] -- Added test 'cppcheck' to perform static code analysis on C / C++ code
+[0.957s] -- Configured cppcheck include dirs: 
+[0.957s] -- Configured cppcheck exclude dirs and/or files: 
+[0.958s] -- Added test 'flake8' to check Python code syntax and style conventions
+[0.958s] -- Configured 'flake8' exclude dirs and/or files: 
+[0.958s] -- Added test 'lint_cmake' to check CMake code style
+[0.959s] -- Added test 'pep257' to check Python code against some of the docstring style conventions in PEP 257
+[0.960s] -- Added test 'uncrustify' to check C / C++ code style
+[0.960s] -- Configured uncrustify additional arguments: 
+[0.961s] -- Added test 'xmllint' to check XML markup files
+[0.962s] -- Configuring done (0.9s)
+[0.979s] -- Generating done (0.0s)
+[0.981s] -- Build files have been written to: /home/hku/robo_arm/build/robo_arm_description
+[1.060s] [ 50%] [32mBuilding CXX object CMakeFiles/end_effector_position.dir/src/end_effector_position.cpp.o[0m
+[4.766s] [100%] [32m[1mLinking CXX executable end_effector_position[0m
+[4.946s] [100%] Built target end_effector_position
+[4.965s] Invoked command in '/home/hku/robo_arm/build/robo_arm_description' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/hku/ws_moveit/install/moveit_configs_utils:/home/hku/ws_moveit2/install/moveit_configs_utils:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/hku/robo_arm/build/robo_arm_description -- -j16 -l16
+[4.980s] Invoking command in '/home/hku/robo_arm/build/robo_arm_description': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/hku/ws_moveit/install/moveit_configs_utils:/home/hku/ws_moveit2/install/moveit_configs_utils:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/hku/robo_arm/build/robo_arm_description
+[4.994s] -- Install configuration: ""
+[4.994s] -- Execute custom install script
+[4.994s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/lib/robo_arm_description/end_effector_position
+[4.995s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description//launch/__pycache__/display.launch.cpython-312.pyc
+[4.995s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description//launch/display.launch.py
+[4.995s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description//urdf/robo_arm.urdf
+[4.995s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description//urdf/robo_arm.urdf.xacro
+[4.995s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description//rviz/display.rviz
+[4.995s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/ament_index/resource_index/package_run_dependencies/robo_arm_description
+[4.996s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/ament_index/resource_index/parent_prefix_path/robo_arm_description
+[4.996s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description/environment/ament_prefix_path.sh
+[4.996s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description/environment/ament_prefix_path.dsv
+[4.996s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description/environment/path.sh
+[4.996s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description/environment/path.dsv
+[4.996s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description/local_setup.bash
+[4.996s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description/local_setup.sh
+[4.997s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description/local_setup.zsh
+[4.997s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description/local_setup.dsv
+[4.997s] -- Symlinking: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description/package.dsv
+[5.010s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/ament_index/resource_index/packages/robo_arm_description
+[5.010s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description/cmake/robo_arm_descriptionConfig.cmake
+[5.010s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description/cmake/robo_arm_descriptionConfig-version.cmake
+[5.010s] -- Up-to-date symlink: /home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description/package.xml
+[5.012s] Invoked command in '/home/hku/robo_arm/build/robo_arm_description' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/hku/ws_moveit/install/moveit_configs_utils:/home/hku/ws_moveit2/install/moveit_configs_utils:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/hku/robo_arm/build/robo_arm_description

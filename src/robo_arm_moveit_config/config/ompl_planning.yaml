@@ -1,0 +1,33 @@
+planning_plugin: ompl_interface/OMPLPlanner
+request_adapters: >-
+  default_planner_request_adapters/AddTimeOptimalParameterization
+  default_planner_request_adapters/FixWorkspaceBounds
+  default_planner_request_adapters/FixStartStateBounds
+  default_planner_request_adapters/FixStartStateCollision
+  default_planner_request_adapters/FixStartStatePathConstraints
+response_adapters: >-
+  default_planner_response_adapters/AddTimeOptimalParameterization
+  default_planner_response_adapters/ValidateSolution
+  default_planner_response_adapters/DisplayMotionPath
+
+planner_configs:
+  SBL:
+    type: geometric::SBL
+  RRT:
+    type: geometric::RRT
+    range: 0.0
+  RRTConnect:
+    type: geometric::RRTConnect
+    range: 0.0
+  TRRT:
+    type: geometric::TRRT
+    range: 0.0
+
+arm:
+  planner_configs:
+    - SBL
+    - RRT
+    - RRTConnect
+    - TRRT
+  projection_evaluator: joints(joint1,joint2)
+  longest_valid_segment_fraction: 0.005

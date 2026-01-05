@@ -1,0 +1,1 @@
+/home/hku/robo_arm/build/robo_arm_description/ament_cmake_environment_hooks/local_setup.bash
