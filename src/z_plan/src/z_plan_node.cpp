@@ -268,33 +268,38 @@ mtc::Task MTCTaskNode::createTask()
   task.setProperty("eef", end_effector_name);
   task.setProperty("ik_frame", end_effector_name);
   
-  // 1. CurrentState - 获取当前状态
-  auto current_state = std::make_unique<mtc::stages::CurrentState>("current state");
-  task.add(std::move(current_state));
+  // 1. 使用 FixedState 而不是 CurrentState（不需要 move_group）
+  auto scene = std::make_shared<planning_scene::PlanningScene>(robot_model_);
+  
+  // 使用最新的关节角度设置场景
+  auto& robot_state = scene->getCurrentStateNonConst();
+  const moveit::core::JointModelGroup* joint_model_group = 
+      robot_model_->getJointModelGroup(arm_group_name);
+  robot_state.setJointGroupPositions(joint_model_group, joint_angles_);
+  robot_state.update();
+  
+  auto fixed_state = std::make_unique<mtc::stages::FixedState>("current state");
+  fixed_state->setState(scene);
+  task.add(std::move(fixed_state));
 
-  // 获取当前末端执行器位姿（只计算一次）
-  auto current_pose = getCurrentEndEffectorPose();
-
-  // 2. Generator - 生成当前末端执行器位姿
-  auto generator_stage = std::make_unique<mtc::stages::GeneratePose>("generate current pose");
-  generator_stage->setPose(current_pose);
-  generator_stage->properties().set("marker_ns", "current_pose");
-  task.add(std::move(generator_stage));
-
-  // 3. Propagator - 使用CartesianPath移动到目标位置 (y + 100mm)
+  // 2. 使用 MoveRelative 而不是 MoveTo（更简单）
   auto cartesian_planner = std::make_shared<mtc::solvers::CartesianPath>();
   cartesian_planner->setMaxVelocityScalingFactor(1.0);
   cartesian_planner->setMaxAccelerationScalingFactor(1.0);
   cartesian_planner->setStepSize(0.01);  // 1cm步长
   
-  auto move_to_target = std::make_unique<mtc::stages::MoveTo>("move z+100mm", cartesian_planner);
-  move_to_target->setGroup(arm_group_name);
+  auto move_relative = std::make_unique<mtc::stages::MoveRelative>("move z+100mm", cartesian_planner);
+  move_relative->setGroup(arm_group_name);
   
-  // 设置目标位姿：当前位置 + z轴100mm
-  auto target_pose = current_pose;  // 复用当前位姿
-  target_pose.pose.position.z += 0.10;  // 100mm = 0.1m
-  move_to_target->setGoal(target_pose);
-  task.add(std::move(move_to_target));
+  // 设置相对移动：沿 z 轴移动 100mm
+  geometry_msgs::msg::Vector3Stamped direction;
+  direction.header.frame_id = "base_link";
+  direction.vector.x = 0.0;
+  direction.vector.y = 0.0;
+  direction.vector.z = 0.10;  // 100mm = 0.1m
+  
+  move_relative->setDirection(direction);
+  task.add(std::move(move_relative));
 
   return task;
 }
