@@ -45,11 +45,14 @@ void MTCTaskNode::doTask()
   RCLCPP_INFO(LOGGER, "Waiting for planning scene to be ready...");
   rclcpp::sleep_for(std::chrono::seconds(3));
   
+  RCLCPP_INFO(LOGGER, "Creating task...");
   task_ = createTask();
 
   try
   {
+    RCLCPP_INFO(LOGGER, "Initializing task...");
     task_.init();
+    RCLCPP_INFO(LOGGER, "Task initialized successfully!");
   }
   catch (mtc::InitStageException& e)
   {
@@ -57,19 +60,27 @@ void MTCTaskNode::doTask()
     return;
   }
 
+  RCLCPP_INFO(LOGGER, "Planning task...");
   if (!task_.plan(5))
   {
     RCLCPP_ERROR_STREAM(LOGGER, "Task planning failed");
     return;
   }
+  RCLCPP_INFO(LOGGER, "Planning succeeded! ✓");
+  
+  RCLCPP_INFO(LOGGER, "Publishing solution to RViz...");
   task_.introspection().publishSolution(*task_.solutions().front());
 
+  RCLCPP_INFO(LOGGER, "Executing planned trajectory...");
   auto result = task_.execute(*task_.solutions().front());
   if (result.val != moveit_msgs::msg::MoveItErrorCodes::SUCCESS)
   {
     RCLCPP_ERROR_STREAM(LOGGER, "Task execution failed");
     return;
   }
+  
+  RCLCPP_INFO(LOGGER, "Execution completed successfully! ✓");
+  RCLCPP_INFO(LOGGER, "Task finished!");
 
   return;
 }
@@ -106,8 +117,15 @@ mtc::Task MTCTaskNode::createTask()
   {
     auto stage = std::make_unique<mtc::stages::MoveRelative>("move z+100mm", cartesian_planner);
     stage->properties().set("marker_ns", "move_z");
-    stage->properties().set("link", end_effector_name);
-    stage->properties().configureInitFrom(mtc::Stage::PARENT, { "group" });
+    stage->properties().set("group", arm_group_name);  // Use arm group, not end_effector
+    stage->properties().set("link", end_effector_name);  // Reference frame for movement
+    
+    // Set IK frame as identity pose at end_effector
+    geometry_msgs::msg::PoseStamped ik_frame;
+    ik_frame.header.frame_id = end_effector_name;
+    ik_frame.pose.orientation.w = 1.0;
+    stage->properties().set("ik_frame", ik_frame);
+    
     stage->setMinMaxDistance(0.10, 0.10);  // exactly 100mm
 
     // Set upward direction (Z+)
@@ -139,8 +157,16 @@ int main(int argc, char** argv)
     executor.remove_node(mtc_task_node->getNodeBaseInterface());
   });
 
+  RCLCPP_INFO(LOGGER, "========================================");
+  RCLCPP_INFO(LOGGER, "Z Plan Node Started!");
+  RCLCPP_INFO(LOGGER, "========================================");
+  
   mtc_task_node->doTask();
 
+  RCLCPP_INFO(LOGGER, "========================================");
+  RCLCPP_INFO(LOGGER, "Z Plan Node Shutting Down");
+  RCLCPP_INFO(LOGGER, "========================================");
+  
   spin_thread->join();
   rclcpp::shutdown();
   return 0;

@@ -1,1 +1,0 @@
-/home/hku/robo_arm/build/robo_arm_moveit_config/ament_cmake_core/robo_arm_moveit_configConfig-version.cmake
