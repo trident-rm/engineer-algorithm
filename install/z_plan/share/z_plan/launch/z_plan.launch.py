@@ -1,42 +1,25 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, Command
+from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
+from moveit_configs_utils import MoveItConfigsBuilder
 from ament_index_python.packages import get_package_share_directory
 import os
 
 
 def generate_launch_description():
-    # 获取包路径
-    z_plan_pkg = get_package_share_directory('z_plan')
+    # Get package directories
     robo_arm_desc_pkg = get_package_share_directory('robo_arm_description')
+    urdf_file = os.path.join(robo_arm_desc_pkg, 'urdf', 'robo_arm.urdf')
     
-    # 读取URDF内容
-    with open(os.path.join(robo_arm_desc_pkg, 'urdf', 'robo_arm.urdf'), 'r') as f:
-        robot_description = f.read()
-    
-    # 读取SRDF内容
-    try:
-        moveit_config_pkg = get_package_share_directory('robo_arm_moveit_config')
-        with open(os.path.join(moveit_config_pkg, 'config', 'robo_arm.srdf'), 'r') as f:
-            robot_description_semantic = f.read()
-    except:
-        robot_description_semantic = ""
-    
-    # 读取运动学配置
-    try:
-        with open(os.path.join(moveit_config_pkg, 'config', 'kinematics.yaml'), 'r') as f:
-            kinematics_yaml = f.read()
-    except:
-        kinematics_yaml = ""
-    
-    # 读取OMPL规划配置
-    try:
-        with open(os.path.join(moveit_config_pkg, 'config', 'ompl_planning.yaml'), 'r') as f:
-            ompl_planning_yaml = f.read()
-    except:
-        ompl_planning_yaml = ""
+    # 使用 MoveItConfigsBuilder 正确配置所有参数
+    moveit_config = (
+        MoveItConfigsBuilder("robotic_arm", package_name="robo_arm_moveit_config")
+        .robot_description(file_path=urdf_file)
+        .robot_description_semantic(file_path="config/robo_arm.srdf")
+        .planning_pipelines(pipelines=["ompl"])
+        .to_moveit_configs()
+    )
     
     # Robot State Publisher
     robot_state_publisher = Node(
@@ -44,10 +27,10 @@ def generate_launch_description():
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='screen',
-        parameters=[{'robot_description': robot_description}],
+        parameters=[moveit_config.robot_description],
     )
     
-    # Static TF: world -> base_link (根据URDF中的固定关节)
+    # Static TF: world -> base_link
     static_tf = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -56,14 +39,14 @@ def generate_launch_description():
         output='screen',
     )
     
-    # Joint State Publisher GUI（用于手动调整机械臂）
+    # Joint State Publisher GUI
     joint_state_publisher_gui = Node(
         package='joint_state_publisher_gui',
         executable='joint_state_publisher_gui',
         name='joint_state_publisher_gui',
     )
 
-    # RViz - 优先使用robo_arm_description的配置
+    # RViz
     try:
         rviz_config = os.path.join(
             get_package_share_directory('robo_arm_description'), 
@@ -79,10 +62,24 @@ def generate_launch_description():
         output='log',
         arguments=['-d', rviz_config] if rviz_config and os.path.exists(rviz_config) else [],
         parameters=[
-            {
-                'robot_description': robot_description,
-                'robot_description_semantic': robot_description_semantic,
-            }
+            moveit_config.robot_description,
+            moveit_config.robot_description_semantic,
+            moveit_config.planning_pipelines,
+        ],
+    )
+
+    # MoveGroup 节点 - 使用 MoveItConfigsBuilder 生成的完整配置
+    move_group_node = Node(
+        package='moveit_ros_move_group',
+        executable='move_group',
+        name='move_group',
+        output='screen',
+        parameters=[
+            moveit_config.robot_description,
+            moveit_config.robot_description_semantic,
+            moveit_config.robot_description_kinematics,
+            moveit_config.planning_pipelines,
+            moveit_config.trajectory_execution,
         ],
     )
 
@@ -93,11 +90,9 @@ def generate_launch_description():
         name='z_plan_node',
         output='screen',
         parameters=[
-            {
-                'robot_description': robot_description,
-                'robot_description_semantic': robot_description_semantic,
-                'robot_description_kinematics': kinematics_yaml,
-            }
+            moveit_config.robot_description,
+            moveit_config.robot_description_semantic,
+            moveit_config.planning_pipelines,
         ],
     )
 
@@ -105,6 +100,7 @@ def generate_launch_description():
         robot_state_publisher,
         static_tf,
         joint_state_publisher_gui,
+        move_group_node,
         rviz,
         z_plan_node,
     ])

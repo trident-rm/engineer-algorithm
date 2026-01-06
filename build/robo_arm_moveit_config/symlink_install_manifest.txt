@@ -1,4 +1,5 @@
 /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/config/controllers.yaml
+/home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/config/joint_limits.yaml
 /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/config/kinematics.yaml
 /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/config/moveit.rviz
 /home/hku/robo_arm/install/robo_arm_moveit_config/share/robo_arm_moveit_config/config/ompl_planning.yaml

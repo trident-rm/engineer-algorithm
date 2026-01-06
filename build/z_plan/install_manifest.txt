@@ -1,5 +1,6 @@
 /home/hku/robo_arm/install/z_plan/lib/z_plan/z_plan_node
 /home/hku/robo_arm/install/z_plan/share/z_plan/launch/z_plan.launch.py
+/home/hku/robo_arm/install/z_plan/share/z_plan/launch/__pycache__/z_plan.launch.cpython-312.pyc
 /home/hku/robo_arm/install/z_plan/share/z_plan/config/move_group.yaml
 /home/hku/robo_arm/install/z_plan/share/ament_index/resource_index/package_run_dependencies/z_plan
 /home/hku/robo_arm/install/z_plan/share/ament_index/resource_index/parent_prefix_path/z_plan
