@@ -14,7 +14,6 @@
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("z_plan_node");
 namespace mtc = moveit::task_constructor;
-using moveit::planning_interface::MoveGroupInterface;
 
 class MTCTaskNode              
 {

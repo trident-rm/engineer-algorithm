@@ -64,12 +64,12 @@ int main(int argc, char** argv)
     RCLCPP_INFO(LOGGER, "Setting target pose to absolute position...");
     
     // Set a target Pose
-    auto const target_pose = []{
+    auto const target_pose = [&current_pose]{
       geometry_msgs::msg::Pose msg;
-      msg.orientation.w = 1.0;
-      msg.position.x = 0.28;
-      msg.position.y = -0.2;
-      msg.position.z = 0.5;
+      msg.orientation.w = current_pose.pose.orientation.w;  // 保持当前方向不变
+      msg.position.x = current_pose.pose.position.x;
+      msg.position.y = current_pose.pose.position.y;
+      msg.position.z = current_pose.pose.position.z - 0.1;
       return msg;
     }();
     
