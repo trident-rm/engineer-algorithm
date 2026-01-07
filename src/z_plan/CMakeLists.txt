@@ -15,7 +15,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(moveit_visual_tools REQUIRED)
 
-# Add executable
+# Add executable for MTC version
 add_executable(z_plan_node src/z_plan_node.cpp)
 ament_target_dependencies(z_plan_node
   rclcpp
@@ -28,9 +28,18 @@ ament_target_dependencies(z_plan_node
 target_include_directories(z_plan_node PUBLIC ${EIGEN3_INCLUDE_DIRS})
 target_link_libraries(z_plan_node Eigen3::Eigen)
 
-# Install executable
+# Add executable for MoveGroupInterface version
+add_executable(z_plan_movegroup src/z_plan_movegroup.cpp)
+ament_target_dependencies(z_plan_movegroup
+  rclcpp
+  geometry_msgs
+  moveit_ros_planning_interface
+)
+
+# Install executables
 install(TARGETS
   z_plan_node
+  z_plan_movegroup
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -4,6 +4,8 @@
 #include <moveit/task_constructor/task.h>
 #include <moveit/task_constructor/solvers.h>
 #include <moveit/task_constructor/stages.h>
+#include <moveit_visual_tools/moveit_visual_tools.h>
+#include <thread>
 #if __has_include(<tf2_geometry_msgs/tf2_geometry_msgs.hpp>)
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #else
@@ -12,8 +14,9 @@
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("z_plan_node");
 namespace mtc = moveit::task_constructor;
+using moveit::planning_interface::MoveGroupInterface;
 
-class MTCTaskNode
+class MTCTaskNode              
 {
 public:
   MTCTaskNode(const rclcpp::NodeOptions& options);
@@ -106,13 +109,14 @@ mtc::Task MTCTaskNode::createTask()
   task.stages()->setName("z_plan_task");
   task.loadRobotModel(node_);
 
-  const auto& arm_group_name = "arm";
-  const auto& end_effector_name = "end_effector";
+  const auto& arm_group_name = "panda_arm";
+  const auto& hand_group_name = "hand";
+  const auto& hand_frame = "panda_hand";
 
   // Set task properties
   task.setProperty("group", arm_group_name);
-  task.setProperty("eef", end_effector_name);
-  task.setProperty("ik_frame", end_effector_name);
+  task.setProperty("eef", hand_group_name);
+  task.setProperty("ik_frame", hand_frame);
 
   // Disable warnings for this line, as it's a variable that's set but not used in this example
 #pragma GCC diagnostic push
@@ -137,19 +141,19 @@ mtc::Task MTCTaskNode::createTask()
     auto stage = std::make_unique<mtc::stages::MoveRelative>("move z+100mm", cartesian_planner);
     stage->properties().set("marker_ns", "move_z");
     stage->properties().set("group", arm_group_name);  // Use arm group, not end_effector
-    stage->properties().set("link", end_effector_name);  // Reference frame for movement
+    stage->properties().set("link", hand_frame);  // Reference frame for movement
     
     // Set IK frame as identity pose at end_effector
     geometry_msgs::msg::PoseStamped ik_frame;
-    ik_frame.header.frame_id = end_effector_name;
+    ik_frame.header.frame_id = hand_frame;
     ik_frame.pose.orientation.w = 1.0;
     stage->properties().set("ik_frame", ik_frame);
     
-    stage->setMinMaxDistance(0.10, 0.10);  // exactly 100mm
+    stage->setMinMaxDistance(0.02, 0.02);  // exactly 20mm
 
     // Set upward direction (Z+)
     geometry_msgs::msg::Vector3Stamped vec;
-    vec.header.frame_id = "base_link";
+    vec.header.frame_id = "joint";
     vec.vector.x = 0.0;
     vec.vector.y = 0.0;
     vec.vector.z = 1.0;

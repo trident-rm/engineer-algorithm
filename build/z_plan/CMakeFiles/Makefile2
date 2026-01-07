@@ -64,6 +64,7 @@ CMAKE_BINARY_DIR = /home/hku/robo_arm/build/z_plan
 
 # The main recursive "all" target.
 all: CMakeFiles/z_plan_node.dir/all
+all: CMakeFiles/z_plan_movegroup.dir/all
 .PHONY : all
 
 # The main recursive "preinstall" target.
@@ -74,6 +75,7 @@ preinstall:
 clean: CMakeFiles/uninstall.dir/clean
 clean: CMakeFiles/z_plan_uninstall.dir/clean
 clean: CMakeFiles/z_plan_node.dir/clean
+clean: CMakeFiles/z_plan_movegroup.dir/clean
 .PHONY : clean
 
 #=============================================================================
@@ -135,7 +137,7 @@ CMakeFiles/z_plan_uninstall.dir/clean:
 CMakeFiles/z_plan_node.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_node.dir/build.make CMakeFiles/z_plan_node.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_node.dir/build.make CMakeFiles/z_plan_node.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hku/robo_arm/build/z_plan/CMakeFiles --progress-num=1,2 "Built target z_plan_node"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hku/robo_arm/build/z_plan/CMakeFiles --progress-num=3,4 "Built target z_plan_node"
 .PHONY : CMakeFiles/z_plan_node.dir/all
 
 # Build rule for subdir invocation for target.
@@ -153,6 +155,32 @@ z_plan_node: CMakeFiles/z_plan_node.dir/rule
 CMakeFiles/z_plan_node.dir/clean:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_node.dir/build.make CMakeFiles/z_plan_node.dir/clean
 .PHONY : CMakeFiles/z_plan_node.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/z_plan_movegroup.dir
+
+# All Build rule for target.
+CMakeFiles/z_plan_movegroup.dir/all:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup.dir/build.make CMakeFiles/z_plan_movegroup.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup.dir/build.make CMakeFiles/z_plan_movegroup.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hku/robo_arm/build/z_plan/CMakeFiles --progress-num=1,2 "Built target z_plan_movegroup"
+.PHONY : CMakeFiles/z_plan_movegroup.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/z_plan_movegroup.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/hku/robo_arm/build/z_plan/CMakeFiles 2
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/z_plan_movegroup.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/hku/robo_arm/build/z_plan/CMakeFiles 0
+.PHONY : CMakeFiles/z_plan_movegroup.dir/rule
+
+# Convenience name for target.
+z_plan_movegroup: CMakeFiles/z_plan_movegroup.dir/rule
+.PHONY : z_plan_movegroup
+
+# clean rule for target.
+CMakeFiles/z_plan_movegroup.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup.dir/build.make CMakeFiles/z_plan_movegroup.dir/clean
+.PHONY : CMakeFiles/z_plan_movegroup.dir/clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.

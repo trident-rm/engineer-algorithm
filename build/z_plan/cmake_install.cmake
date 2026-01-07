@@ -67,6 +67,30 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
+  if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/z_plan/z_plan_movegroup" AND
+     NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/z_plan/z_plan_movegroup")
+    file(RPATH_CHECK
+         FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/z_plan/z_plan_movegroup"
+         RPATH "")
+  endif()
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/z_plan" TYPE EXECUTABLE FILES "/home/hku/robo_arm/build/z_plan/z_plan_movegroup")
+  if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/z_plan/z_plan_movegroup" AND
+     NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/z_plan/z_plan_movegroup")
+    file(RPATH_CHANGE
+         FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/z_plan/z_plan_movegroup"
+         OLD_RPATH "/home/hku/ws_moveit/install/moveit_ros_planning_interface/lib:/home/hku/ws_moveit/install/moveit_ros_move_group/lib:/opt/ros/jazzy/lib:/home/hku/ws_moveit/install/moveit_ros_warehouse/lib:/home/hku/ws_moveit/install/moveit_ros_planning/lib:/home/hku/ws_moveit/install/moveit_ros_occupancy_map_monitor/lib:/home/hku/ws_moveit/install/moveit_core/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/home/hku/ws_moveit/install/moveit_msgs/lib:"
+         NEW_RPATH "")
+    if(CMAKE_INSTALL_DO_STRIP)
+      execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/z_plan/z_plan_movegroup")
+    endif()
+  endif()
+endif()
+
+if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
+  include("/home/hku/robo_arm/build/z_plan/CMakeFiles/z_plan_movegroup.dir/install-cxx-module-bmi-noconfig.cmake" OPTIONAL)
+endif()
+
+if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/z_plan" TYPE DIRECTORY FILES
     "/home/hku/robo_arm/src/z_plan/launch"
     "/home/hku/robo_arm/src/z_plan/config"

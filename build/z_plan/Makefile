@@ -210,6 +210,43 @@ z_plan_node/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_node.dir/build.make CMakeFiles/z_plan_node.dir/build
 .PHONY : z_plan_node/fast
 
+#=============================================================================
+# Target rules for targets named z_plan_movegroup
+
+# Build rule for target.
+z_plan_movegroup: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 z_plan_movegroup
+.PHONY : z_plan_movegroup
+
+# fast build rule for target.
+z_plan_movegroup/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup.dir/build.make CMakeFiles/z_plan_movegroup.dir/build
+.PHONY : z_plan_movegroup/fast
+
+src/z_plan_movegroup.o: src/z_plan_movegroup.cpp.o
+.PHONY : src/z_plan_movegroup.o
+
+# target to build an object file
+src/z_plan_movegroup.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup.dir/build.make CMakeFiles/z_plan_movegroup.dir/src/z_plan_movegroup.cpp.o
+.PHONY : src/z_plan_movegroup.cpp.o
+
+src/z_plan_movegroup.i: src/z_plan_movegroup.cpp.i
+.PHONY : src/z_plan_movegroup.i
+
+# target to preprocess a source file
+src/z_plan_movegroup.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup.dir/build.make CMakeFiles/z_plan_movegroup.dir/src/z_plan_movegroup.cpp.i
+.PHONY : src/z_plan_movegroup.cpp.i
+
+src/z_plan_movegroup.s: src/z_plan_movegroup.cpp.s
+.PHONY : src/z_plan_movegroup.s
+
+# target to generate assembly for a file
+src/z_plan_movegroup.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup.dir/build.make CMakeFiles/z_plan_movegroup.dir/src/z_plan_movegroup.cpp.s
+.PHONY : src/z_plan_movegroup.cpp.s
+
 src/z_plan_node.o: src/z_plan_node.cpp.o
 .PHONY : src/z_plan_node.o
 
@@ -249,7 +286,11 @@ help:
 	@echo "... test"
 	@echo "... uninstall"
 	@echo "... z_plan_uninstall"
+	@echo "... z_plan_movegroup"
 	@echo "... z_plan_node"
+	@echo "... src/z_plan_movegroup.o"
+	@echo "... src/z_plan_movegroup.i"
+	@echo "... src/z_plan_movegroup.s"
 	@echo "... src/z_plan_node.o"
 	@echo "... src/z_plan_node.i"
 	@echo "... src/z_plan_node.s"
