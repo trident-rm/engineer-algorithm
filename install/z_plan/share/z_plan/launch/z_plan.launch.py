@@ -89,7 +89,7 @@ def generate_launch_description():
             moveit_config.robot_description_semantic,
             moveit_config.robot_description_kinematics,
             moveit_config.planning_pipelines,
-            moveit_config.joint_limits, 
+            joint_limits_param,  # ⭐ 使用我们手动加载的 joint_limits
         ],
     )
 

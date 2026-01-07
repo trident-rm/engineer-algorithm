@@ -21,6 +21,7 @@ public:
   rclcpp::node_interfaces::NodeBaseInterface::SharedPtr getNodeBaseInterface();
 
   void doTask();
+  void setupPlanningScene();  // Declaration of setupPlanningScene
 
 private:
   // Compose an MTC task from a series of stages.
@@ -38,6 +39,20 @@ rclcpp::node_interfaces::NodeBaseInterface::SharedPtr MTCTaskNode::getNodeBaseIn
 {
   return node_->get_node_base_interface();
 }
+
+void MTCTaskNode::setupPlanningScene()
+{
+  // Create a PlanningSceneInterface to interact with the planning scene
+  moveit::planning_interface::PlanningSceneInterface planning_scene_interface;
+
+  // Optionally, you can add objects to the planning scene here if needed
+  RCLCPP_INFO(LOGGER, "Setting up the planning scene...");
+
+  // Wait for the planning scene to be ready
+  rclcpp::sleep_for(std::chrono::seconds(2));
+  
+  RCLCPP_INFO(LOGGER, "Planning scene is set up.");
+} 
 
 void MTCTaskNode::doTask()
 {
@@ -108,6 +123,10 @@ mtc::Task MTCTaskNode::createTask()
   current_state_ptr = stage_state_current.get();
   task.add(std::move(stage_state_current));
 
+  auto sample_planner = std::make_shared<mtc::solvers::PipelinePlanner>(node_);
+  auto interplanner = std::make_shared<mtc::solvers::JointInterpolationPlanner>();
+
+
   auto cartesian_planner = std::make_shared<mtc::solvers::CartesianPath>();
   cartesian_planner->setMaxVelocityScalingFactor(1.0);
   cartesian_planner->setMaxAccelerationScalingFactor(1.0);
@@ -160,7 +179,8 @@ int main(int argc, char** argv)
   RCLCPP_INFO(LOGGER, "========================================");
   RCLCPP_INFO(LOGGER, "Z Plan Node Started!");
   RCLCPP_INFO(LOGGER, "========================================");
-  
+
+  mtc_task_node->setupPlanningScene();
   mtc_task_node->doTask();
 
   RCLCPP_INFO(LOGGER, "========================================");
