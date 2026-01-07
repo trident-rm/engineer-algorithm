@@ -54,7 +54,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
      NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/z_plan/z_plan_node")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/z_plan/z_plan_node"
-         OLD_RPATH "/home/hku/ws_moveit/install/moveit_task_constructor_core/lib:/home/hku/ws_moveit/install/moveit_visual_tools/lib:/home/hku/ws_moveit/install/moveit_ros_planning_interface/lib:/home/hku/ws_moveit/install/moveit_ros_move_group/lib:/home/hku/ws_moveit/install/moveit_ros_warehouse/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/lib:/home/hku/ws_moveit/install/rviz_marker_tools/lib:/home/hku/ws_moveit/install/moveit_task_constructor_msgs/lib:/home/hku/ws_moveit/install/moveit_ros_planning/lib:/home/hku/ws_moveit/install/moveit_ros_occupancy_map_monitor/lib:/home/hku/ws_moveit/install/moveit_core/lib:/home/hku/ws_moveit/install/moveit_msgs/lib:/home/hku/ws_moveit/install/rviz_visual_tools/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:"
+         OLD_RPATH "/home/hku/ws_moveit/install/moveit_task_constructor_core/lib:/home/hku/ws_moveit/install/moveit_visual_tools/lib:/home/hku/ws_moveit/install/moveit_ros_planning_interface/lib:/home/hku/ws_moveit/install/moveit_ros_move_group/lib:/home/hku/ws_moveit/install/moveit_ros_warehouse/lib:/home/hku/ws_moveit/install/moveit_ros_planning/lib:/home/hku/ws_moveit/install/moveit_core/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/home/hku/ws_moveit/install/moveit_msgs/lib:/home/hku/ws_moveit/install/rviz_visual_tools/lib:/opt/ros/jazzy/lib:/home/hku/ws_moveit/install/rviz_marker_tools/lib:/home/hku/ws_moveit/install/moveit_task_constructor_msgs/lib:/home/hku/ws_moveit/install/moveit_ros_occupancy_map_monitor/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:"
          NEW_RPATH "")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/z_plan/z_plan_node")
@@ -78,7 +78,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
      NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/z_plan/z_plan_movegroup")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/z_plan/z_plan_movegroup"
-         OLD_RPATH "/home/hku/ws_moveit/install/moveit_ros_planning_interface/lib:/home/hku/ws_moveit/install/moveit_ros_move_group/lib:/opt/ros/jazzy/lib:/home/hku/ws_moveit/install/moveit_ros_warehouse/lib:/home/hku/ws_moveit/install/moveit_ros_planning/lib:/home/hku/ws_moveit/install/moveit_ros_occupancy_map_monitor/lib:/home/hku/ws_moveit/install/moveit_core/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/home/hku/ws_moveit/install/moveit_msgs/lib:"
+         OLD_RPATH "/home/hku/ws_moveit/install/moveit_ros_planning_interface/lib:/home/hku/ws_moveit/install/moveit_visual_tools/lib:/home/hku/ws_moveit/install/moveit_ros_move_group/lib:/home/hku/ws_moveit/install/moveit_ros_warehouse/lib:/home/hku/ws_moveit/install/moveit_ros_planning/lib:/home/hku/ws_moveit/install/moveit_core/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/home/hku/ws_moveit/install/moveit_msgs/lib:/home/hku/ws_moveit/install/rviz_visual_tools/lib:/opt/ros/jazzy/lib:/home/hku/ws_moveit/install/moveit_ros_occupancy_map_monitor/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:"
          NEW_RPATH "")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/z_plan/z_plan_movegroup")

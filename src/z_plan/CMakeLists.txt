@@ -34,6 +34,7 @@ ament_target_dependencies(z_plan_movegroup
   rclcpp
   geometry_msgs
   moveit_ros_planning_interface
+  moveit_visual_tools
 )
 
 # Install executables
