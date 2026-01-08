@@ -198,6 +198,19 @@ z_plan_uninstall/fast:
 .PHONY : z_plan_uninstall/fast
 
 #=============================================================================
+# Target rules for targets named trajectory_utils
+
+# Build rule for target.
+trajectory_utils: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 trajectory_utils
+.PHONY : trajectory_utils
+
+# fast build rule for target.
+trajectory_utils/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trajectory_utils.dir/build.make CMakeFiles/trajectory_utils.dir/build
+.PHONY : trajectory_utils/fast
+
+#=============================================================================
 # Target rules for targets named z_plan_node
 
 # Build rule for target.
@@ -222,6 +235,30 @@ z_plan_movegroup: cmake_check_build_system
 z_plan_movegroup/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup.dir/build.make CMakeFiles/z_plan_movegroup.dir/build
 .PHONY : z_plan_movegroup/fast
+
+src/trajectory_utils.o: src/trajectory_utils.cpp.o
+.PHONY : src/trajectory_utils.o
+
+# target to build an object file
+src/trajectory_utils.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trajectory_utils.dir/build.make CMakeFiles/trajectory_utils.dir/src/trajectory_utils.cpp.o
+.PHONY : src/trajectory_utils.cpp.o
+
+src/trajectory_utils.i: src/trajectory_utils.cpp.i
+.PHONY : src/trajectory_utils.i
+
+# target to preprocess a source file
+src/trajectory_utils.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trajectory_utils.dir/build.make CMakeFiles/trajectory_utils.dir/src/trajectory_utils.cpp.i
+.PHONY : src/trajectory_utils.cpp.i
+
+src/trajectory_utils.s: src/trajectory_utils.cpp.s
+.PHONY : src/trajectory_utils.s
+
+# target to generate assembly for a file
+src/trajectory_utils.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trajectory_utils.dir/build.make CMakeFiles/trajectory_utils.dir/src/trajectory_utils.cpp.s
+.PHONY : src/trajectory_utils.cpp.s
 
 src/z_plan_movegroup.o: src/z_plan_movegroup.cpp.o
 .PHONY : src/z_plan_movegroup.o
@@ -286,8 +323,12 @@ help:
 	@echo "... test"
 	@echo "... uninstall"
 	@echo "... z_plan_uninstall"
+	@echo "... trajectory_utils"
 	@echo "... z_plan_movegroup"
 	@echo "... z_plan_node"
+	@echo "... src/trajectory_utils.o"
+	@echo "... src/trajectory_utils.i"
+	@echo "... src/trajectory_utils.s"
 	@echo "... src/z_plan_movegroup.o"
 	@echo "... src/z_plan_movegroup.i"
 	@echo "... src/z_plan_movegroup.s"

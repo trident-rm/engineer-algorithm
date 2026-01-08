@@ -17,12 +17,42 @@ def generate_launch_description():
         output='screen',
         parameters=[moveit_config.robot_description],
     )
+
+    # Fake Joint Driver (模拟控制器)
+    ros2_control_node = Node(
+        package="controller_manager",
+        executable="ros2_control_node",
+        parameters=[
+            moveit_config.robot_description,
+            os.path.join(
+                get_package_share_directory("panda_moveit_config"),
+                "config",
+                "ros2_controllers.yaml",
+            ),
+        ],
+        output="screen",
+    )
     
-    # Joint State Publisher GUI
-    joint_state_publisher_gui = Node(
-        package='joint_state_publisher_gui',
-        executable='joint_state_publisher_gui',
-        name='joint_state_publisher_gui',
+    # Joint State Broadcaster
+    joint_state_broadcaster_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=[
+            "joint_state_broadcaster",
+            "--controller-manager",
+            "/controller_manager",
+        ],
+    )
+    
+    # Panda Arm Controller
+    panda_arm_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=[
+            "panda_arm_controller",
+            "--controller-manager",
+            "/controller_manager",
+        ],
     )
 
     # RViz with MoveIt config
@@ -55,7 +85,6 @@ def generate_launch_description():
         parameters=[moveit_config.to_dict()],
     )
 
-    # Z Plan MoveGroup node (使用 MoveGroupInterface 的版本)
     z_plan_movegroup = Node(
         package='z_plan',
         executable='z_plan_movegroup',
@@ -71,7 +100,9 @@ def generate_launch_description():
 
     return LaunchDescription([
         robot_state_publisher,
-        joint_state_publisher_gui,
+        ros2_control_node,
+        joint_state_broadcaster_spawner,
+        panda_arm_controller_spawner,
         move_group_node,
         rviz,
         z_plan_movegroup,

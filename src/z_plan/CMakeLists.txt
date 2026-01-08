@@ -12,8 +12,21 @@ find_package(rclcpp REQUIRED)
 find_package(moveit_task_constructor_core REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(trajectory_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(moveit_visual_tools REQUIRED)
+find_package(moveit_msgs REQUIRED)
+
+# Include directories
+include_directories(include)
+
+# 添加工具库
+add_library(trajectory_utils src/trajectory_utils.cpp)
+ament_target_dependencies(trajectory_utils
+  rclcpp
+  moveit_msgs
+  trajectory_msgs
+)
 
 # Add executable for MTC version
 add_executable(z_plan_node src/z_plan_node.cpp)
@@ -30,11 +43,14 @@ target_link_libraries(z_plan_node Eigen3::Eigen)
 
 # Add executable for MoveGroupInterface version
 add_executable(z_plan_movegroup src/z_plan_movegroup.cpp)
+target_link_libraries(z_plan_movegroup trajectory_utils)
 ament_target_dependencies(z_plan_movegroup
   rclcpp
   geometry_msgs
   moveit_ros_planning_interface
   moveit_visual_tools
+  moveit_msgs
+  trajectory_msgs
 )
 
 # Install executables

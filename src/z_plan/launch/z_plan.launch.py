@@ -33,8 +33,6 @@ def generate_launch_description():
     )
     
     # Static TF: world -> panda_link0
-    # ⭐ 注意：panda SRDF 中已定义 virtual_joint (world -> panda_link0)
-    # 如果不需要额外偏移，可以注释掉这个 static_tf
     static_tf = Node(
         package='tf2_ros',
         executable='static_transform_publisher',

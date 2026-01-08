@@ -283,8 +283,6 @@ CMakeFiles/z_plan_node.dir/src/z_plan_node.cpp.o
  /home/hku/ws_moveit/install/moveit_task_constructor_msgs/include/moveit_task_constructor_msgs/moveit_task_constructor_msgs/srv/detail/get_solution__type_support.hpp
  /home/hku/ws_moveit/install/moveit_task_constructor_msgs/include/moveit_task_constructor_msgs/moveit_task_constructor_msgs/srv/get_solution.hpp
  /home/hku/ws_moveit/install/moveit_visual_tools/include/moveit_visual_tools/moveit_visual_tools.h
- /home/hku/ws_moveit/install/rviz_visual_tools/include/rviz_visual_tools/remote_control.hpp
- /home/hku/ws_moveit/install/rviz_visual_tools/include/rviz_visual_tools/rviz_visual_tools.hpp
  /opt/ros/jazzy/include/action_msgs/action_msgs/msg/detail/goal_info__builder.hpp
  /opt/ros/jazzy/include/action_msgs/action_msgs/msg/detail/goal_info__functions.h
  /opt/ros/jazzy/include/action_msgs/action_msgs/msg/detail/goal_info__struct.h
@@ -904,6 +902,8 @@ CMakeFiles/z_plan_node.dir/src/z_plan_node.cpp.o
  /opt/ros/jazzy/include/rsl/rsl/parameter_validators.hpp
  /opt/ros/jazzy/include/rsl/rsl/static_string.hpp
  /opt/ros/jazzy/include/rsl/rsl/static_vector.hpp
+ /opt/ros/jazzy/include/rviz_visual_tools/remote_control.hpp
+ /opt/ros/jazzy/include/rviz_visual_tools/rviz_visual_tools.hpp
  /opt/ros/jazzy/include/sensor_msgs/sensor_msgs/msg/detail/compressed_image__struct.hpp
  /opt/ros/jazzy/include/sensor_msgs/sensor_msgs/msg/detail/compressed_image__traits.hpp
  /opt/ros/jazzy/include/sensor_msgs/sensor_msgs/msg/detail/joint_state__builder.hpp

@@ -6,6 +6,8 @@
 
 #include <moveit_visual_tools/moveit_visual_tools.h>
 
+#include "z_plan/trajectory_utils.hpp"
+
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("z_plan_movegroup");
 
 int main(int argc, char** argv)
@@ -97,6 +99,11 @@ int main(int argc, char** argv)
   const double eef_step = 0.01;
   moveit_msgs::msg::RobotTrajectory trajectory;
   double fraction = move_group.computeCartesianPath(waypoints, eef_step, trajectory);
+
+  // 提取并打印轨迹数据
+  auto trajectory_dict = extractTrajectory(trajectory);
+  printTrajectory(trajectory_dict);
+
   RCLCPP_INFO(LOGGER, "Visualizing Cartesian path (%.2f%% achieved)", fraction * 100.0);
 
   // Visualize the plan in RViz

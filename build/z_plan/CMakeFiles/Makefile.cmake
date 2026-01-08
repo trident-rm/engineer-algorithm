@@ -1636,6 +1636,7 @@ set(CMAKE_MAKEFILE_PRODUCTS
 set(CMAKE_DEPEND_INFO_FILES
   "CMakeFiles/uninstall.dir/DependInfo.cmake"
   "CMakeFiles/z_plan_uninstall.dir/DependInfo.cmake"
+  "CMakeFiles/trajectory_utils.dir/DependInfo.cmake"
   "CMakeFiles/z_plan_node.dir/DependInfo.cmake"
   "CMakeFiles/z_plan_movegroup.dir/DependInfo.cmake"
   )
