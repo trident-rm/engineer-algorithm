@@ -1,7 +1,10 @@
 /home/hku/robo_arm/install/z_plan/lib/z_plan/z_plan_node
 /home/hku/robo_arm/install/z_plan/lib/z_plan/z_plan_movegroup
 /home/hku/robo_arm/install/z_plan/lib/z_plan/z_plan_movegroup_robo_arm
+/home/hku/robo_arm/install/z_plan/lib/z_plan/real_world
+/home/hku/robo_arm/install/z_plan/lib/z_plan/read_data
 /home/hku/robo_arm/install/z_plan/share/z_plan/launch/z_plan_movegroup.launch.py
+/home/hku/robo_arm/install/z_plan/share/z_plan/launch/real_world.launch.py
 /home/hku/robo_arm/install/z_plan/share/z_plan/launch/z_plan.launch.py
 /home/hku/robo_arm/install/z_plan/share/z_plan/launch/z_plan_movegroup_robo_arm.launch.py
 /home/hku/robo_arm/install/z_plan/share/z_plan/launch/__pycache__/z_plan.launch.cpython-312.pyc

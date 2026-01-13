@@ -16,6 +16,9 @@ find_package(trajectory_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(moveit_visual_tools REQUIRED)
 find_package(moveit_msgs REQUIRED)
+find_package(serial REQUIRED)
+find_package(graph_msgs REQUIRED)
+find_package(moveit_core REQUIRED)
 
 # Include directories
 include_directories(include)
@@ -26,6 +29,9 @@ ament_target_dependencies(trajectory_utils
   rclcpp
   moveit_msgs
   trajectory_msgs
+  moveit_ros_planning_interface
+  graph_msgs
+  moveit_core
 )
 
 add_library(usb_data src/usb_data.cpp)
@@ -33,6 +39,7 @@ ament_target_dependencies(usb_data
   rclcpp
   moveit_msgs
   trajectory_msgs
+  serial
 )
 
 # Add executable for MTC version
@@ -82,7 +89,15 @@ ament_target_dependencies(real_world
   moveit_visual_tools
   moveit_msgs
   trajectory_msgs
-  usb_data
+  serial
+)
+
+add_executable(read_data src/read_data_test.cpp src/usb_data.cpp)
+ament_target_dependencies(read_data
+  rclcpp
+  sensor_msgs
+  trajectory_msgs
+  serial
 )
 
 # Install executables
@@ -91,6 +106,7 @@ install(TARGETS
   z_plan_movegroup
   z_plan_movegroup_robo_arm
   real_world
+  read_data
   DESTINATION lib/${PROJECT_NAME}
 )
 

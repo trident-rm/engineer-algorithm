@@ -64,9 +64,12 @@ CMAKE_BINARY_DIR = /home/hku/robo_arm/build/z_plan
 
 # The main recursive "all" target.
 all: CMakeFiles/trajectory_utils.dir/all
+all: CMakeFiles/usb_data.dir/all
 all: CMakeFiles/z_plan_node.dir/all
 all: CMakeFiles/z_plan_movegroup.dir/all
 all: CMakeFiles/z_plan_movegroup_robo_arm.dir/all
+all: CMakeFiles/real_world.dir/all
+all: CMakeFiles/read_data.dir/all
 .PHONY : all
 
 # The main recursive "preinstall" target.
@@ -77,9 +80,12 @@ preinstall:
 clean: CMakeFiles/uninstall.dir/clean
 clean: CMakeFiles/z_plan_uninstall.dir/clean
 clean: CMakeFiles/trajectory_utils.dir/clean
+clean: CMakeFiles/usb_data.dir/clean
 clean: CMakeFiles/z_plan_node.dir/clean
 clean: CMakeFiles/z_plan_movegroup.dir/clean
 clean: CMakeFiles/z_plan_movegroup_robo_arm.dir/clean
+clean: CMakeFiles/real_world.dir/clean
+clean: CMakeFiles/read_data.dir/clean
 .PHONY : clean
 
 #=============================================================================
@@ -141,7 +147,7 @@ CMakeFiles/z_plan_uninstall.dir/clean:
 CMakeFiles/trajectory_utils.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/trajectory_utils.dir/build.make CMakeFiles/trajectory_utils.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/trajectory_utils.dir/build.make CMakeFiles/trajectory_utils.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hku/robo_arm/build/z_plan/CMakeFiles --progress-num=1,2 "Built target trajectory_utils"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hku/robo_arm/build/z_plan/CMakeFiles --progress-num=6,7 "Built target trajectory_utils"
 .PHONY : CMakeFiles/trajectory_utils.dir/all
 
 # Build rule for subdir invocation for target.
@@ -161,13 +167,39 @@ CMakeFiles/trajectory_utils.dir/clean:
 .PHONY : CMakeFiles/trajectory_utils.dir/clean
 
 #=============================================================================
+# Target rules for target CMakeFiles/usb_data.dir
+
+# All Build rule for target.
+CMakeFiles/usb_data.dir/all:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/usb_data.dir/build.make CMakeFiles/usb_data.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/usb_data.dir/build.make CMakeFiles/usb_data.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hku/robo_arm/build/z_plan/CMakeFiles --progress-num=8,9 "Built target usb_data"
+.PHONY : CMakeFiles/usb_data.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/usb_data.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/hku/robo_arm/build/z_plan/CMakeFiles 2
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/usb_data.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/hku/robo_arm/build/z_plan/CMakeFiles 0
+.PHONY : CMakeFiles/usb_data.dir/rule
+
+# Convenience name for target.
+usb_data: CMakeFiles/usb_data.dir/rule
+.PHONY : usb_data
+
+# clean rule for target.
+CMakeFiles/usb_data.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/usb_data.dir/build.make CMakeFiles/usb_data.dir/clean
+.PHONY : CMakeFiles/usb_data.dir/clean
+
+#=============================================================================
 # Target rules for target CMakeFiles/z_plan_node.dir
 
 # All Build rule for target.
 CMakeFiles/z_plan_node.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_node.dir/build.make CMakeFiles/z_plan_node.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_node.dir/build.make CMakeFiles/z_plan_node.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hku/robo_arm/build/z_plan/CMakeFiles --progress-num=7,8 "Built target z_plan_node"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hku/robo_arm/build/z_plan/CMakeFiles --progress-num=14,15 "Built target z_plan_node"
 .PHONY : CMakeFiles/z_plan_node.dir/all
 
 # Build rule for subdir invocation for target.
@@ -193,7 +225,7 @@ CMakeFiles/z_plan_node.dir/clean:
 CMakeFiles/z_plan_movegroup.dir/all: CMakeFiles/trajectory_utils.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup.dir/build.make CMakeFiles/z_plan_movegroup.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup.dir/build.make CMakeFiles/z_plan_movegroup.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hku/robo_arm/build/z_plan/CMakeFiles --progress-num=3,4 "Built target z_plan_movegroup"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hku/robo_arm/build/z_plan/CMakeFiles --progress-num=10,11 "Built target z_plan_movegroup"
 .PHONY : CMakeFiles/z_plan_movegroup.dir/all
 
 # Build rule for subdir invocation for target.
@@ -219,7 +251,7 @@ CMakeFiles/z_plan_movegroup.dir/clean:
 CMakeFiles/z_plan_movegroup_robo_arm.dir/all: CMakeFiles/trajectory_utils.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup_robo_arm.dir/build.make CMakeFiles/z_plan_movegroup_robo_arm.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup_robo_arm.dir/build.make CMakeFiles/z_plan_movegroup_robo_arm.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hku/robo_arm/build/z_plan/CMakeFiles --progress-num=5,6 "Built target z_plan_movegroup_robo_arm"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hku/robo_arm/build/z_plan/CMakeFiles --progress-num=12,13 "Built target z_plan_movegroup_robo_arm"
 .PHONY : CMakeFiles/z_plan_movegroup_robo_arm.dir/all
 
 # Build rule for subdir invocation for target.
@@ -237,6 +269,59 @@ z_plan_movegroup_robo_arm: CMakeFiles/z_plan_movegroup_robo_arm.dir/rule
 CMakeFiles/z_plan_movegroup_robo_arm.dir/clean:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup_robo_arm.dir/build.make CMakeFiles/z_plan_movegroup_robo_arm.dir/clean
 .PHONY : CMakeFiles/z_plan_movegroup_robo_arm.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/real_world.dir
+
+# All Build rule for target.
+CMakeFiles/real_world.dir/all: CMakeFiles/trajectory_utils.dir/all
+CMakeFiles/real_world.dir/all: CMakeFiles/usb_data.dir/all
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/real_world.dir/build.make CMakeFiles/real_world.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/real_world.dir/build.make CMakeFiles/real_world.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hku/robo_arm/build/z_plan/CMakeFiles --progress-num=4,5 "Built target real_world"
+.PHONY : CMakeFiles/real_world.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/real_world.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/hku/robo_arm/build/z_plan/CMakeFiles 6
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/real_world.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/hku/robo_arm/build/z_plan/CMakeFiles 0
+.PHONY : CMakeFiles/real_world.dir/rule
+
+# Convenience name for target.
+real_world: CMakeFiles/real_world.dir/rule
+.PHONY : real_world
+
+# clean rule for target.
+CMakeFiles/real_world.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/real_world.dir/build.make CMakeFiles/real_world.dir/clean
+.PHONY : CMakeFiles/real_world.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/read_data.dir
+
+# All Build rule for target.
+CMakeFiles/read_data.dir/all:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/read_data.dir/build.make CMakeFiles/read_data.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/read_data.dir/build.make CMakeFiles/read_data.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hku/robo_arm/build/z_plan/CMakeFiles --progress-num=1,2,3 "Built target read_data"
+.PHONY : CMakeFiles/read_data.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/read_data.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/hku/robo_arm/build/z_plan/CMakeFiles 3
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/read_data.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/hku/robo_arm/build/z_plan/CMakeFiles 0
+.PHONY : CMakeFiles/read_data.dir/rule
+
+# Convenience name for target.
+read_data: CMakeFiles/read_data.dir/rule
+.PHONY : read_data
+
+# clean rule for target.
+CMakeFiles/read_data.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/read_data.dir/build.make CMakeFiles/read_data.dir/clean
+.PHONY : CMakeFiles/read_data.dir/clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.

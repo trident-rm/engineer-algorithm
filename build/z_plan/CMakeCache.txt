@@ -815,7 +815,7 @@ ZLIB_LIBRARY_DEBUG:FILEPATH=ZLIB_LIBRARY_DEBUG-NOTFOUND
 ZLIB_LIBRARY_RELEASE:FILEPATH=/usr/lib/x86_64-linux-gnu/libz.so
 
 //Path to a library.
-_lib:FILEPATH=/home/hku/ws_moveit/install/rviz_visual_tools/lib/librviz_visual_tools_gui.so
+_lib:FILEPATH=/home/hku/ws_moveit/install/serial/lib/libserial.a
 
 //Path to a library.
 _ogre_main_static_library_abs:FILEPATH=/opt/ros/jazzy/opt/rviz_ogre_vendor/lib/libOgreMain.so
@@ -1261,6 +1261,9 @@ rviz_visual_tools_DIR:PATH=/home/hku/ws_moveit/install/rviz_visual_tools/share/r
 //The directory containing a CMake configuration file for sensor_msgs.
 sensor_msgs_DIR:PATH=/opt/ros/jazzy/share/sensor_msgs/cmake
 
+//The directory containing a CMake configuration file for serial.
+serial_DIR:PATH=/home/hku/ws_moveit/install/serial/share/serial/cmake
+
 //The directory containing a CMake configuration file for service_msgs.
 service_msgs_DIR:PATH=/opt/ros/jazzy/share/service_msgs/cmake
 
@@ -1313,7 +1316,7 @@ tracetools_DIR:PATH=/opt/ros/jazzy/share/tracetools/cmake
 trajectory_msgs_DIR:PATH=/opt/ros/jazzy/share/trajectory_msgs/cmake
 
 //Dependencies for the target
-trajectory_utils_LIB_DEPENDS:STATIC=general;rclcpp::rclcpp;general;moveit_msgs::moveit_msgs__rosidl_generator_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_fastrtps_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_introspection_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_fastrtps_cpp;general;moveit_msgs::moveit_msgs__rosidl_typesupport_introspection_cpp;general;moveit_msgs::moveit_msgs__rosidl_typesupport_cpp;general;moveit_msgs::moveit_msgs__rosidl_generator_py;general;trajectory_msgs::trajectory_msgs__rosidl_generator_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_fastrtps_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_fastrtps_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_introspection_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_introspection_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_generator_py;
+trajectory_utils_LIB_DEPENDS:STATIC=general;rclcpp::rclcpp;general;moveit_msgs::moveit_msgs__rosidl_generator_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_fastrtps_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_introspection_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_fastrtps_cpp;general;moveit_msgs::moveit_msgs__rosidl_typesupport_introspection_cpp;general;moveit_msgs::moveit_msgs__rosidl_typesupport_cpp;general;moveit_msgs::moveit_msgs__rosidl_generator_py;general;trajectory_msgs::trajectory_msgs__rosidl_generator_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_fastrtps_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_fastrtps_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_introspection_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_introspection_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_generator_py;general;moveit_ros_planning_interface::moveit_common_planning_interface_objects;general;moveit_ros_planning_interface::moveit_planning_scene_interface;general;moveit_ros_planning_interface::moveit_move_group_interface;general;graph_msgs::graph_msgs__rosidl_generator_c;general;graph_msgs::graph_msgs__rosidl_typesupport_fastrtps_c;general;graph_msgs::graph_msgs__rosidl_typesupport_introspection_c;general;graph_msgs::graph_msgs__rosidl_typesupport_c;general;graph_msgs::graph_msgs__rosidl_typesupport_fastrtps_cpp;general;graph_msgs::graph_msgs__rosidl_typesupport_introspection_cpp;general;graph_msgs::graph_msgs__rosidl_typesupport_cpp;general;graph_msgs::graph_msgs__rosidl_generator_py;general;moveit_core::moveit_collision_detection;general;moveit_core::moveit_collision_detection_bullet;general;moveit_core::moveit_collision_detection_fcl;general;moveit_core::moveit_collision_distance_field;general;moveit_core::moveit_constraint_samplers;general;moveit_core::moveit_distance_field;general;moveit_core::moveit_dynamics_solver;general;moveit_core::moveit_exceptions;general;moveit_core::moveit_kinematic_constraints;general;moveit_core::moveit_kinematics_base;general;moveit_core::moveit_kinematics_metrics;general;moveit_core::moveit_planning_interface;general;moveit_core::moveit_planning_scene;general;moveit_core::moveit_robot_model;general;moveit_core::moveit_robot_state;general;moveit_core::moveit_robot_trajectory;general;moveit_core::moveit_smoothing_base;general;moveit_core::moveit_test_utils;general;moveit_core::moveit_trajectory_processing;general;moveit_core::moveit_transforms;general;moveit_core::moveit_utils;
 
 //The directory containing a CMake configuration file for type_description_interfaces.
 type_description_interfaces_DIR:PATH=/opt/ros/jazzy/share/type_description_interfaces/cmake
@@ -1332,6 +1335,9 @@ urdfdom_DIR:PATH=/opt/ros/jazzy/lib/x86_64-linux-gnu/urdfdom/cmake
 
 //The directory containing a CMake configuration file for urdfdom_headers.
 urdfdom_headers_DIR:PATH=/opt/ros/jazzy/lib/x86_64-linux-gnu/urdfdom_headers/cmake
+
+//Dependencies for the target
+usb_data_LIB_DEPENDS:STATIC=general;rclcpp::rclcpp;general;moveit_msgs::moveit_msgs__rosidl_generator_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_fastrtps_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_introspection_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_fastrtps_cpp;general;moveit_msgs::moveit_msgs__rosidl_typesupport_introspection_cpp;general;moveit_msgs::moveit_msgs__rosidl_typesupport_cpp;general;moveit_msgs::moveit_msgs__rosidl_generator_py;general;trajectory_msgs::trajectory_msgs__rosidl_generator_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_fastrtps_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_fastrtps_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_introspection_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_introspection_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_generator_py;general;serial::serial;
 
 //The directory containing a CMake configuration file for visualization_msgs.
 visualization_msgs_DIR:PATH=/opt/ros/jazzy/share/visualization_msgs/cmake

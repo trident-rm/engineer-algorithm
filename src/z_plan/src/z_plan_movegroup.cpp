@@ -1,12 +1,9 @@
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <moveit/planning_scene_interface/planning_scene_interface.hpp>
-
 #include <moveit_msgs/msg/display_robot_state.hpp>
 #include <moveit_msgs/msg/display_trajectory.hpp>
-
 #include <moveit_visual_tools/moveit_visual_tools.h>
-
-#include "z_plan/trajectory_utils.hpp"
+#include "trajectory_utils.hpp"
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("z_plan_movegroup");
 

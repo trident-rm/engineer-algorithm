@@ -23,13 +23,15 @@ public:
     void send_joint_angles(const std::vector<float>& joint_angles, uint8_t control_mode = 0);
     std::vector<float> get_joint_angles() const;
     void receive_data();
+    void print_joint_angles() const;
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr get_publisher() const;
 
 private:
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pub_;
     std::vector<uint8_t> buffer_;
     serial::Serial serial_;
     const uint8_t EXPECTED_SOF = 0xAA;
-    std::vector<float> joint_angle_{6, 0.0};
+    std::vector<float> joint_angle_{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
     uint16_t calculateCRC16(const uint8_t* data, size_t length);
     void process_buffer();

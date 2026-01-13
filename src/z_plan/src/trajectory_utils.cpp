@@ -12,6 +12,8 @@
 #include <geometry_msgs/msg/pose.hpp>
 #include <Eigen/Geometry>
 
+static const rclcpp::Logger LOGGER = rclcpp::get_logger("trajectory_utils");
+
 std::map<std::string, std::vector<double>> extractTrajectory(
     const moveit_msgs::msg::RobotTrajectory& robot_trajectory)
 {
@@ -179,12 +181,12 @@ std::vector<std::vector<float>> trajectory_2d_array(
         return result;
     }
 
-    size_t num_points = trajectory_dict[joint_names[0]].size();
+    size_t num_points = trajectory_dict.at(joint_names[0]).size();
     result.reserve(num_points);
     for(size_t t = 0; t < num_points; ++t){
         std::vector<float> joint_angles_at_time(6, 0.0f);
         for(int i = 0; i < 6; ++i){
-            joint_angles_at_time[i] = static_cast<float>(trajectory_dict[joint_names[i]][t]);
+            joint_angles_at_time[i] = static_cast<float>(trajectory_dict.at(joint_names[i])[t]);
         }
         result.push_back(joint_angles_at_time);
     }

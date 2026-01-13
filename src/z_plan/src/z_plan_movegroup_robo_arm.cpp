@@ -3,7 +3,7 @@
 #include <moveit_msgs/msg/display_robot_state.hpp>
 #include <moveit_msgs/msg/display_trajectory.hpp>
 #include <moveit_visual_tools/moveit_visual_tools.h>
-#include "z_plan/trajectory_utils.hpp"
+#include "trajectory_utils.hpp"
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("z_plan_movegroup_robo_arm");
 
@@ -81,7 +81,8 @@ int main(int argc, char** argv)
   visual_tools.prompt("Press 'next' in the RvizVisualToolsGui window to continue with Cartesian path");
 
   // Cartesian Paths
-   current_pose = move_group.getCurrentPose().pose;
+  geometry_msgs::msg::Pose current_pose; // Declare current_pose before using it
+  current_pose = move_group.getCurrentPose().pose;
   
   std::vector<geometry_msgs::msg::Pose> waypoints;
   waypoints.push_back(current_pose);
