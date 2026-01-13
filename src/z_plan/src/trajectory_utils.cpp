@@ -1,8 +1,16 @@
-#include "z_plan/trajectory_utils.hpp"
+#include "trajectory_utils.hpp"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
 #include <rclcpp/rclcpp.hpp>
+#include <moveit/move_group_interface/move_group_interface.hpp>
+#include <moveit/planning_scene_interface/planning_scene_interface.hpp>
+#include <moveit_msgs/msg/display_robot_state.hpp>
+#include <moveit_msgs/msg/display_trajectory.hpp>
+#include <moveit_visual_tools/moveit_visual_tools.h>
+#include <sensor_msgs/msg/joint_state.hpp>
+#include <geometry_msgs/msg/pose.hpp>
+#include <Eigen/Geometry>
 
 std::map<std::string, std::vector<double>> extractTrajectory(
     const moveit_msgs::msg::RobotTrajectory& robot_trajectory)
@@ -17,29 +25,20 @@ std::map<std::string, std::vector<double>> extractTrajectory(
         return result;
     }
     
-    // 为每个关节初始化数组
     for (const auto& name : joint_names) {
         result[name] = std::vector<double>();
         result[name].reserve(points.size());
     }
-    
-    // 为 time_from_start 初始化数组
+
     result["time_from_start"] = std::vector<double>();
     result["time_from_start"].reserve(points.size());
     
-    // 提取每个点的位置和时间
     for (const auto& point : points) {
-        // 提取关节位置
         for (size_t i = 0; i < joint_names.size(); ++i) {
             if (i < point.positions.size()) {
                 result[joint_names[i]].push_back(point.positions[i]);
             }
         }
-        
-        // 提取时间戳 (duration 转换为秒)
-        // duration 类型: builtin_interfaces::msg::Duration
-        //   - int32 sec
-        //   - uint32 nanosec
         double time_seconds = point.time_from_start.sec + 
                              point.time_from_start.nanosec * 1e-9;
         result["time_from_start"].push_back(time_seconds);
@@ -133,18 +132,63 @@ void printTrajectory(const std::map<std::string, std::vector<double>>& trajector
     RCLCPP_INFO(LOGGER, "========================================");
 }
 
-/*
-std::map<std::string, std::vector<double>> calculate_current(std::map<std::string, std::vector<double>> acceleration){
-    for (const auto& joint : acceleration) {
-        std::string joint_name = joint.first;
-        std::vector<double> acc_values = joint.second; 
-           
-    //get acceleration
-    //calculate torque using zhonglibuchangfa
-    //calculate current
+// 计算末端相对于base_link的位姿
+geometry_msgs::msg::Pose compute_end_effector_pose(
+    const std::vector<float>& joint_angles,
+    const moveit::core::RobotModelConstPtr& robot_model,
+    const moveit::core::JointModelGroup* joint_model_group,
+    const std::string& end_effector_link)
+{
+    moveit::core::RobotStatePtr robot_state = std::make_shared<moveit::core::RobotState>(robot_model);
+    const std::vector<std::string>& joint_names = joint_model_group->getJointModelNames();
 
-
+    if(joint_names.size() == 6 && joint_angles.size() == 6){
+        for(size_t i = 0; i < 6; ++i){
+            double angle = static_cast<double>(joint_angles[i]);
+            robot_state->setJointPositions(joint_names[i], &angle);
+        }
+    } else {
+        RCLCPP_WARN(LOGGER, "Joint count mismatch: expected 6, got %zu joints and %zu angles", 
+            joint_names.size(), joint_angles.size());
+        return geometry_msgs::msg::Pose(); 
+    }
+    
+    robot_state->update();
+    const Eigen::Isometry3d& end_effector_state = robot_state->getGlobalLinkTransform(end_effector_link);
+    
+    geometry_msgs::msg::Pose pose;
+    pose.position.x = end_effector_state.translation().x();
+    pose.position.y = end_effector_state.translation().y();
+    pose.position.z = end_effector_state.translation().z();
+    
+    Eigen::Quaterniond quat(end_effector_state.rotation());
+    pose.orientation.x = quat.x();
+    pose.orientation.y = quat.y();
+    pose.orientation.z = quat.z();
+    pose.orientation.w = quat.w();
+    
+    return pose;
 }
-*/
+
+std::vector<std::vector<float>> trajectory_2d_array(
+    const std::map<std::string, std::vector<double>>& trajectory_dict,
+    const std::vector<std::string>& joint_names)
+{
+    std::vector<std::vector<float>> result;
+    if(trajectory_dict.empty() || joint_names.empty()){
+        return result;
+    }
+
+    size_t num_points = trajectory_dict[joint_names[0]].size();
+    result.reserve(num_points);
+    for(size_t t = 0; t < num_points; ++t){
+        std::vector<float> joint_angles_at_time(6, 0.0f);
+        for(int i = 0; i < 6; ++i){
+            joint_angles_at_time[i] = static_cast<float>(trajectory_dict[joint_names[i]][t]);
+        }
+        result.push_back(joint_angles_at_time);
+    }
+    return result;
+}
 
 

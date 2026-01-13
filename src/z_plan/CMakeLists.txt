@@ -28,6 +28,13 @@ ament_target_dependencies(trajectory_utils
   trajectory_msgs
 )
 
+add_library(usb_data src/usb_data.cpp)
+ament_target_dependencies(usb_data
+  rclcpp
+  moveit_msgs
+  trajectory_msgs
+)
+
 # Add executable for MTC version
 add_executable(z_plan_node src/z_plan_node.cpp)
 ament_target_dependencies(z_plan_node
@@ -53,10 +60,37 @@ ament_target_dependencies(z_plan_movegroup
   trajectory_msgs
 )
 
+# Add executable for MoveGroupInterface version with robo_arm3
+add_executable(z_plan_movegroup_robo_arm src/z_plan_movegroup_robo_arm.cpp)
+target_link_libraries(z_plan_movegroup_robo_arm trajectory_utils)
+ament_target_dependencies(z_plan_movegroup_robo_arm
+  rclcpp
+  geometry_msgs
+  moveit_ros_planning_interface
+  moveit_visual_tools
+  moveit_msgs
+  trajectory_msgs
+)
+
+# Add executable for real world situation
+add_executable(real_world src/real_world.cpp)
+target_link_libraries(real_world trajectory_utils usb_data)
+ament_target_dependencies(real_world
+  rclcpp
+  geometry_msgs
+  moveit_ros_planning_interface
+  moveit_visual_tools
+  moveit_msgs
+  trajectory_msgs
+  usb_data
+)
+
 # Install executables
 install(TARGETS
   z_plan_node
   z_plan_movegroup
+  z_plan_movegroup_robo_arm
+  real_world
   DESTINATION lib/${PROJECT_NAME}
 )
 

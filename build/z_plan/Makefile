@@ -236,6 +236,19 @@ z_plan_movegroup/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup.dir/build.make CMakeFiles/z_plan_movegroup.dir/build
 .PHONY : z_plan_movegroup/fast
 
+#=============================================================================
+# Target rules for targets named z_plan_movegroup_robo_arm
+
+# Build rule for target.
+z_plan_movegroup_robo_arm: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 z_plan_movegroup_robo_arm
+.PHONY : z_plan_movegroup_robo_arm
+
+# fast build rule for target.
+z_plan_movegroup_robo_arm/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup_robo_arm.dir/build.make CMakeFiles/z_plan_movegroup_robo_arm.dir/build
+.PHONY : z_plan_movegroup_robo_arm/fast
+
 src/trajectory_utils.o: src/trajectory_utils.cpp.o
 .PHONY : src/trajectory_utils.o
 
@@ -284,6 +297,30 @@ src/z_plan_movegroup.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup.dir/build.make CMakeFiles/z_plan_movegroup.dir/src/z_plan_movegroup.cpp.s
 .PHONY : src/z_plan_movegroup.cpp.s
 
+src/z_plan_movegroup_robo_arm.o: src/z_plan_movegroup_robo_arm.cpp.o
+.PHONY : src/z_plan_movegroup_robo_arm.o
+
+# target to build an object file
+src/z_plan_movegroup_robo_arm.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup_robo_arm.dir/build.make CMakeFiles/z_plan_movegroup_robo_arm.dir/src/z_plan_movegroup_robo_arm.cpp.o
+.PHONY : src/z_plan_movegroup_robo_arm.cpp.o
+
+src/z_plan_movegroup_robo_arm.i: src/z_plan_movegroup_robo_arm.cpp.i
+.PHONY : src/z_plan_movegroup_robo_arm.i
+
+# target to preprocess a source file
+src/z_plan_movegroup_robo_arm.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup_robo_arm.dir/build.make CMakeFiles/z_plan_movegroup_robo_arm.dir/src/z_plan_movegroup_robo_arm.cpp.i
+.PHONY : src/z_plan_movegroup_robo_arm.cpp.i
+
+src/z_plan_movegroup_robo_arm.s: src/z_plan_movegroup_robo_arm.cpp.s
+.PHONY : src/z_plan_movegroup_robo_arm.s
+
+# target to generate assembly for a file
+src/z_plan_movegroup_robo_arm.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/z_plan_movegroup_robo_arm.dir/build.make CMakeFiles/z_plan_movegroup_robo_arm.dir/src/z_plan_movegroup_robo_arm.cpp.s
+.PHONY : src/z_plan_movegroup_robo_arm.cpp.s
+
 src/z_plan_node.o: src/z_plan_node.cpp.o
 .PHONY : src/z_plan_node.o
 
@@ -325,6 +362,7 @@ help:
 	@echo "... z_plan_uninstall"
 	@echo "... trajectory_utils"
 	@echo "... z_plan_movegroup"
+	@echo "... z_plan_movegroup_robo_arm"
 	@echo "... z_plan_node"
 	@echo "... src/trajectory_utils.o"
 	@echo "... src/trajectory_utils.i"
@@ -332,6 +370,9 @@ help:
 	@echo "... src/z_plan_movegroup.o"
 	@echo "... src/z_plan_movegroup.i"
 	@echo "... src/z_plan_movegroup.s"
+	@echo "... src/z_plan_movegroup_robo_arm.o"
+	@echo "... src/z_plan_movegroup_robo_arm.i"
+	@echo "... src/z_plan_movegroup_robo_arm.s"
 	@echo "... src/z_plan_node.o"
 	@echo "... src/z_plan_node.i"
 	@echo "... src/z_plan_node.s"
