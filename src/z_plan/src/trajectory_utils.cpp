@@ -14,6 +14,21 @@
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("trajectory_utils");
 
+geometry_msgs::msg::Pose determineEndEffectorPose(int level, geometry_msgs::msg::Pose current_pose){
+    geometry_msgs::msg::Pose pose;
+    if(level == 1){
+        pose.position.x = current_pose.position.x;
+        pose.position.y = current_pose.position.y;
+        pose.position.z = current_pose.position.z+0.1;
+        pose.orientation.x = 0.0;
+        pose.orientation.y = 0.0;
+        pose.orientation.z = 0.0;
+        pose.orientation.w = 1.0;
+        return pose;
+    }
+    return pose;
+}
+
 std::map<std::string, std::vector<double>> extractTrajectory(
     const moveit_msgs::msg::RobotTrajectory& robot_trajectory)
 {
@@ -142,16 +157,17 @@ geometry_msgs::msg::Pose compute_end_effector_pose(
     const std::string& end_effector_link)
 {
     moveit::core::RobotStatePtr robot_state = std::make_shared<moveit::core::RobotState>(robot_model);
-    const std::vector<std::string>& joint_names = joint_model_group->getJointModelNames();
+    // 使用活动（可驱动）关节列表，忽略 virtual_joint 等非驱动关节
+    const std::vector<std::string> joint_names = joint_model_group->getActiveJointModelNames();
 
-    if(joint_names.size() == 6 && joint_angles.size() == 6){
-        for(size_t i = 0; i < 6; ++i){
+    if (joint_names.size() == joint_angles.size()) {
+        for (size_t i = 0; i < joint_names.size(); ++i) {
             double angle = static_cast<double>(joint_angles[i]);
             robot_state->setJointPositions(joint_names[i], &angle);
         }
     } else {
-        RCLCPP_WARN(LOGGER, "Joint count mismatch: expected 6, got %zu joints and %zu angles", 
-            joint_names.size(), joint_angles.size());
+        RCLCPP_WARN(LOGGER, "Joint count mismatch: expected %zu, got %zu joints and %zu angles", 
+            joint_names.size(), joint_names.size(), joint_angles.size());
         return geometry_msgs::msg::Pose(); 
     }
     

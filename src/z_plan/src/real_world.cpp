@@ -15,6 +15,7 @@
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("z_plan_real_world");
 
+
 int main(int argc, char** argv){
     rclcpp::init(argc, argv);
     rclcpp::NodeOptions node_options;
@@ -39,7 +40,7 @@ int main(int argc, char** argv){
     moveit::core::RobotModelConstPtr robot_model = move_group.getRobotModel();
     const std::string end_effector_link = move_group.getEndEffectorLink();
 
-    const std::vector<std::string>& joint_names = joint_model_group->getJointModelNames();
+    const std::vector<std::string> joint_names = joint_model_group->getActiveJointModelNames();
     
     auto joint_state_sub = move_group_node->create_subscription<sensor_msgs::msg::JointState>(
         "/usb_joint_states", 10,
@@ -60,8 +61,7 @@ int main(int argc, char** argv){
                 
                 std::vector<geometry_msgs::msg::Pose> waypoints;
                 waypoints.push_back(current_end_effector_pose);
-                geometry_msgs::msg::Pose target_end_effector_pose = current_end_effector_pose;
-                target_end_effector_pose.position.z -= 0.1;
+                geometry_msgs::msg::Pose target_end_effector_pose = determineEndEffectorPose(1, current_end_effector_pose);
                 waypoints.push_back(target_end_effector_pose);
                 const double eef_step = 0.01;
                 moveit_msgs::msg::RobotTrajectory trajectory;
@@ -92,10 +92,11 @@ int main(int argc, char** argv){
             }
         });
 
-    RCLCPP_INFO(LOGGER, "Waiting for joint states and computing Cartesian path...");
     while(rclcpp::ok()){
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        rclcpp::sleep_for(std::chrono::milliseconds(500));
+        RCLCPP_INFO(LOGGER, "Waiting for joint states and computing Cartesian path...");
     }
+
     rclcpp::shutdown();
     return 0;
 }

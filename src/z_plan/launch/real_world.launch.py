@@ -8,10 +8,13 @@ def generate_launch_description():
     moveit_config = MoveItConfigsBuilder("robo_arm3", package_name="robo_arm3_moveit_config").to_moveit_configs()
     
     real_world_node = Node(
-        package='parse_data',
+        package='z_plan',
         executable='real_world',
         name='real_world_node',
         output='screen',
+        remappings=[
+            ('/usb_joint_states', '/joint_states'),
+        ],
         parameters=[
             moveit_config.robot_description,
             moveit_config.robot_description_semantic,

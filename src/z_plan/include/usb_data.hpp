@@ -30,12 +30,11 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pub_;
     std::vector<uint8_t> buffer_;
     serial::Serial serial_;
-    const uint8_t EXPECTED_SOF = 0xAA;
+    const uint8_t EXPECTED_SOF = 0x91;
     std::vector<float> joint_angle_{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-
-    uint16_t calculateCRC16(const uint8_t* data, size_t length);
     void process_buffer();
-    bool checkCRC16(const std::vector<uint8_t>& buffer);
+    uint32_t verify_CRC16_check_sum(uint8_t *pchMessage, uint32_t dwLength);
+    uint16_t get_CRC16_check_sum(uint8_t *pch_message,uint32_t dw_length,uint16_t wCRC);
     void parse_buffer(const std::vector<uint8_t>& packet);
     void publish_joint_states(const std::vector<uint8_t>& packet);
 };
