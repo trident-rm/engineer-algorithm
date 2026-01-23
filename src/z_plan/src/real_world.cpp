@@ -62,6 +62,7 @@ int main(int argc, char** argv){
             float original_value5 = msg->position[4];
             msg->position[1] = -original_value2;
             msg->position[4] = 6.28-original_value5;
+            //if end effector reached our targer pose, compute cartesian path and send to serial
 
             moveit::core::RobotState start_state(robot_model);
             start_state.setToDefaultValues();
@@ -93,7 +94,7 @@ int main(int argc, char** argv){
         current_end_effector_pose.orientation.z = q.z();
         current_end_effector_pose.orientation.w = q.w();
             
-            RCLCPP_INFO(LOGGER, "Current end effector pose - Position: [%.3f, %.3f, %.3f], Orientation: [%.3f, %.3f, %.3f, %.3f]",
+        RCLCPP_INFO(LOGGER, "Current end effector pose - Position: [%.3f, %.3f, %.3f], Orientation: [%.3f, %.3f, %.3f, %.3f]",
                         current_end_effector_pose.position.x,
                         current_end_effector_pose.position.y,
                         current_end_effector_pose.position.z,
@@ -102,27 +103,27 @@ int main(int argc, char** argv){
                         current_end_effector_pose.orientation.z,
                         current_end_effector_pose.orientation.w);
 
-            std::vector<geometry_msgs::msg::Pose> waypoints;
-            waypoints.push_back(current_end_effector_pose);
-            geometry_msgs::msg::Pose target_end_effector_pose = current_end_effector_pose;
-            target_end_effector_pose.position.z += 0.1;
-            waypoints.push_back(target_end_effector_pose);
+        std::vector<geometry_msgs::msg::Pose> waypoints;
+        waypoints.push_back(current_end_effector_pose);
+        geometry_msgs::msg::Pose target_end_effector_pose = current_end_effector_pose;
+        target_end_effector_pose.position.z += 0.1;
+        waypoints.push_back(target_end_effector_pose);
 
-            const double eef_step = 0.01;
-            moveit_msgs::msg::RobotTrajectory trajectory;
-            double fraction = move_group.computeCartesianPath(waypoints, eef_step, trajectory);
+        const double eef_step = 0.01;
+        moveit_msgs::msg::RobotTrajectory trajectory;
+        double fraction = move_group.computeCartesianPath(waypoints, eef_step, trajectory);
 
-            if (fraction < 0.9) {
-                RCLCPP_WARN(LOGGER, "Failed to compute Cartesian path, fraction: %.2f", fraction);
-                return;
-            }
+        if (fraction < 0.9) {
+            RCLCPP_WARN(LOGGER, "Failed to compute Cartesian path, fraction: %.2f", fraction);
+            return;
+        }
 
-            RCLCPP_INFO(LOGGER, "Computed Cartesian path with fraction: %.2f", fraction);
-            auto trajectory_dict = extractTrajectory(trajectory);
-            printTrajectory(trajectory_dict);
-            std::vector<std::vector<float>> trajectory_array = trajectory_2d_array(trajectory_dict, joint_names);
+        RCLCPP_INFO(LOGGER, "Computed Cartesian path with fraction: %.2f", fraction);
+        auto trajectory_dict = extractTrajectory(trajectory);
+        printTrajectory(trajectory_dict);
+        std::vector<std::vector<float>> trajectory_array = trajectory_2d_array(trajectory_dict, joint_names);
 
-            RCLCPP_INFO(LOGGER, "Trajectory converted to 2D array with %zu time points", trajectory_array.size());
+        RCLCPP_INFO(LOGGER, "Trajectory converted to 2D array with %zu time points", trajectory_array.size());
 
             for (const auto &ja : trajectory_array) {
                 if (ja.size() == joint_names.size()) {
@@ -148,3 +149,4 @@ int main(int argc, char** argv){
     rclcpp::shutdown();
     return 0;
 }
+

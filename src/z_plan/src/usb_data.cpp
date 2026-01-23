@@ -76,7 +76,7 @@ void SerialRxNode::send_joint_angles(const float joint_angles[6], uint8_t contro
 
     try {
         serial_.write(data_ptr, sizeof(nuc_rx_t));
-        RCLCPP_DEBUG(this->get_logger(), "Sent joint angles to serial port");
+        RCLCPP_INFO(this->get_logger(), "Sent joint angles to serial port");
     } catch (const std::exception& e) {
         RCLCPP_ERROR(this->get_logger(), "Failed to send joint angles: %s", e.what());
     }
