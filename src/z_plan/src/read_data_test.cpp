@@ -12,7 +12,7 @@ int main(int argc, char** argv) {
     rclcpp::Rate rate(1.0);
     while (rclcpp::ok()) {
         serial_node->print_joint_angles();
-        /*serial_node->send_joint_angles(serial_node->get_joint_angles().data(),0);*/
+        serial_node->send_joint_angles(serial_node->get_joint_angles().data(),0);
         rate.sleep();
     }
     rclcpp::shutdown();

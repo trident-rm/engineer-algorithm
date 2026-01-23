@@ -15,6 +15,7 @@
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>eigen</depend>
+  <depend>tf2_eigen</depend>
   <depend>usb_data</depend>
   <depend>trajectory_utils</depend>
 

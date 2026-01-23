@@ -19,6 +19,7 @@ find_package(moveit_msgs REQUIRED)
 find_package(serial REQUIRED)
 find_package(graph_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
+find_package(tf2_eigen REQUIRED)
 
 # Include directories
 include_directories(include)
@@ -90,6 +91,7 @@ ament_target_dependencies(real_world
   moveit_msgs
   trajectory_msgs
   serial
+  tf2_eigen
 )
 
 add_executable(read_data src/read_data_test.cpp src/usb_data.cpp)
