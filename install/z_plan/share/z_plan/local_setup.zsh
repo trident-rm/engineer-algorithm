@@ -1,1 +1,0 @@
-/home/hku/robo_arm/build/z_plan/ament_cmake_environment_hooks/local_setup.zsh
