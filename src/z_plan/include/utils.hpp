@@ -10,6 +10,7 @@
 #include <moveit/robot_model/robot_model.hpp>
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <functional>
+#include <Eigen/Dense>
 
 /**
  * @brief  从 JointTrajectory 中提取加速度信息
@@ -88,25 +89,41 @@ geometry_msgs::msg::Pose compute_target_pose_along_direction(
 Eigen::Vector3d compute_e_hat_direction(const std::vector<std::vector<double>>& path);
 
 /**
- * @brief  对控制器输出的关节角度施加 e_hat 方向约束
- * @note   通过 FK 计算末端位姿，消除 e_hat 方向上的位移分量，然后通过 IK 求解新的关节角度
- * @param  controller_joint_angle  控制器输出的 6 个关节角度（弧度）
- * @param  reference_pose  参考位姿（用于确定约束平面）
- * @param  e_hat  e_hat 方向单位向量（指向科技核心）
- * @param  robot_model  MoveIt 机器人模型
- * @param  joint_model_group  关节模型组
- * @param  end_effector_link  末端执行器连杆名称
- * @param  joint_names  关节名称列表
- * @retval std::vector<std::vector<double>> 约束后的 6 个关节角度的数组（弧度）
+ * @brief  对控制器末端位置施加 e_hat 方向约束，用雅可比伪逆（阻尼最小二乘）求一步关节增量
+ *
+ * 算法（与 test_constraint.cpp::constrained_step() 一致）：
+ *   1. FK(controller_angles)  → controller_ee
+ *   2. FK(robo_arm_angles)    → current_ee
+ *   3. constrained_target = reference_position + (controller_ee - reference_position) 投影到 e_hat 垂直平面
+ *   4. velocity = constrained_target - current_ee（再次去掉 e_hat 分量，双重保险）
+ *   5. 死区（< DEAD_ZONE）直接返回 robo_arm_angles（不动）
+ *   6. 限速（velocity.norm() ≤ MAX_SPEED）
+ *   7. J_linear = Jacobian 前3行；SVD 计算条件数
+ *   8. 自适应阻尼：cond ∈ [COND_LOW, COND_HIGH] → λ ∈ [λ_min, λ_max]
+ *   9. J_pinv = Jᵀ(JJᵀ + λ²I)⁻¹；Δq = J_pinv · velocity · dt
+ *  10. 等比缩放 Δq（MAX_JOINT_DELTA = 0.1 rad/cycle）
+ *  11. 关节限位裕度等比缩放
+ *
+ * @param  robo_arm_angles      当前机械臂关节角度 (rad)
+ * @param  controller_angles    控制器关节角度 (rad)
+ * @param  reference_position   UP 模式进入时的末端参考位置 (m)
+ * @param  e_hat                约束方向单位向量（此方向上末端不可运动）
+ * @param  robot_model          MoveIt 机器人模型
+ * @param  joint_model_group    关节模型组
+ * @param  end_effector_link    末端执行器连杆名称
+ * @param  joint_names          关节名称列表
+ * @param  dt                   控制周期 (s)，默认 0.05
+ * @retval std::vector<double>  约束后一步目标关节角度（死区时返回当前角度，失败时返回空）
  */
-std::vector<std::vector<double>> e_hat_direction_constraint(
-    const std::vector<double>& controller_joint_angle,
-    const geometry_msgs::msg::Pose& reference_pose,
+std::vector<double> e_hat_direction_constraint(
+    const std::vector<double>& robo_arm_angles,
+    const std::vector<double>& controller_angles,
+    const Eigen::Vector3d& reference_position,
     const Eigen::Vector3d& e_hat,
     const moveit::core::RobotModelConstPtr& robot_model,
     const moveit::core::JointModelGroup* joint_model_group,
     const std::string& end_effector_link,
     const std::vector<std::string>& joint_names,
-    std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group);
+    double dt = 0.05);
 
 #endif

@@ -480,7 +480,7 @@ private:
                 RCLCPP_INFO(LOGGER, "  e_hat direction: [%.3f, %.3f, %.3f]",
                            e_hat_direction_.x(), e_hat_direction_.y(), e_hat_direction_.z());
                 RCLCPP_INFO(LOGGER, "  EE position: [%.3f, %.3f, %.3f]",
-                           reference_pose_.position.x, reference_pose_.position.y, reference_pose_.position.z());
+                           reference_pose_.position.x, reference_pose_.position.y, reference_pose_.position.z);
                 RCLCPP_INFO(LOGGER, "  Using Jacobian-based velocity-to-angle mapping");
                 
                 // 在 RViz 中显示参考位姿信息
@@ -555,16 +555,15 @@ private:
     }
     
     /**
-     * @brief 处理 UP 模式 — 雅可比伪逆速度→角度映射
-     * 
-     * 替换旧的 computeCartesianPath + IK + 状态机方案：
-     *   旧：controller FK → 投影 → computeCartesianPath(IK) → 多帧轨迹 → 状态机
-     *   新：controller FK → 投影 → 位移差 → J⁺·v·dt → 角度增量 → 直接发送
-     * 
-     * 优势：
+     * @brief 处理 UP 模式 — 调用 utils::e_hat_direction_constraint（雅可比伪逆方案）
+     *
+     * 流程：
+     *   controller FK → 投影到 e_hat 垂直平面 → 自适应阻尼 J⁺·v·dt → 角度增量 → 直接发送
+     *
+     * 相比旧的 computeCartesianPath+IK+状态机：
      *   - 无 IK 多值解跳变（雅可比给出唯一连续解）
      *   - 无状态机，每个控制周期独立计算
-     *   - 延迟从 ~100ms 降到 ~1ms
+     *   - 自适应阻尼处理奇异点，等比缩放保证关节限位
      */
     void handle_mode_up(
         const std::vector<double>& robo_arm_angles,
@@ -575,160 +574,34 @@ private:
             return;
         }
         if (!reference_pose_initialized_) return;
-        
-        // Step 1: FK 计算 controller 的目标末端位置
-        geometry_msgs::msg::Pose controller_pose = compute_end_effector_pose(controller_angles);
-        Eigen::Vector3d controller_position(
-            controller_pose.position.x,
-            controller_pose.position.y,
-            controller_pose.position.z);
-        
-        // Step 2: FK 计算当前机械臂的实际末端位置
-        geometry_msgs::msg::Pose current_pose = compute_end_effector_pose(robo_arm_angles);
-        Eigen::Vector3d current_position(
-            current_pose.position.x,
-            current_pose.position.y,
-            current_pose.position.z);
-        
-        // Step 3: controller 相对于参考点的位移，投影到约束平面（消除 e_hat 分量）
+
         Eigen::Vector3d reference_position(
             reference_pose_.position.x,
             reference_pose_.position.y,
             reference_pose_.position.z);
-        
-        Eigen::Vector3d displacement = controller_position - reference_position;
-        Eigen::Vector3d e_hat = e_hat_direction_.normalized();
-        double e_hat_component = displacement.dot(e_hat);
-        Eigen::Vector3d constrained_displacement = displacement - e_hat_component * e_hat;
-        
-        // 约束后的目标位置
-        Eigen::Vector3d target_position = reference_position + constrained_displacement;
-        
-        // Step 4: 当前位置到约束目标的速度方向（同样消除 e_hat 分量，双重保险）
-        Eigen::Vector3d velocity = target_position - current_position;
-        velocity = velocity - velocity.dot(e_hat) * e_hat;
-        
-        // Step 5: 死区检查（距离 < 1mm 时不动）
-        double dist = velocity.norm();
-        if (dist < 0.001) {
-            // 已经到达目标，维持当前角度
-            std::vector<float> send_angles = convert_urdf_to_hardware(robo_arm_angles);
-            serial_node_->send_roboarm_with_controller(latest_torques_, send_angles);
-            return;
-        }
-        
-        // Step 6: 限速（最大线速度 0.15 m/s）
-        const double max_linear_speed = 0.15;
-        if (dist > max_linear_speed) {
-            velocity = velocity * (max_linear_speed / dist);
-        }
-        
-        // Step 7: 用雅可比伪逆把笛卡尔速度映射为关节角增量
-        //   Δq = J⁺ · v · dt
-        //   q_new = q_current + Δq
-        const double dt = 0.05;  // 控制周期 50ms
-        std::vector<double> target_joint_angles = jacobian_velocity_to_joint_angles(
-            robo_arm_angles, velocity, dt);
-        
-        if (target_joint_angles.empty()) {
+
+        // 调用 utils 中的 Jacobian 约束函数（与 test_constraint.cpp 算法一致）
+        std::vector<double> target_angles = e_hat_direction_constraint(
+            robo_arm_angles,
+            controller_angles,
+            reference_position,
+            e_hat_direction_,
+            robot_model_,
+            joint_model_group_,
+            end_effector_link_,
+            joint_names_,
+            0.05);   // dt = 50ms
+
+        if (target_angles.empty()) {
             // 雅可比计算失败（奇异点附近），维持当前角度
-            RCLCPP_WARN(LOGGER, "UP mode: Jacobian computation failed (near singularity)");
-            std::vector<float> send_angles = convert_urdf_to_hardware(robo_arm_angles);
-            serial_node_->send_roboarm_with_controller(latest_torques_, send_angles);
+            RCLCPP_WARN(LOGGER, "UP mode: e_hat_direction_constraint failed (singular)");
+            serial_node_->send_roboarm_with_controller(
+                latest_torques_, convert_urdf_to_hardware(robo_arm_angles));
             return;
         }
-        
-        // Step 8: 发送目标角度
-        std::vector<float> send_angles = convert_urdf_to_hardware(target_joint_angles);
-        serial_node_->send_roboarm_with_controller(latest_torques_, send_angles);
-        
-        RCLCPP_DEBUG(LOGGER, "UP Jacobian: v=[%.4f,%.4f,%.4f] norm=%.4f e_hat_rm=%.4f",
-                    velocity.x(), velocity.y(), velocity.z(), dist, e_hat_component);
-    }
-    
-    /**
-     * @brief 用雅可比伪逆将笛卡尔线速度映射为目标关节角度
-     * 
-     * 核心公式：
-     *   J = ∂x/∂q  (6×n 雅可比矩阵，前3行是线速度，后3行是角速度)
-     *   J_linear = J 的前3行 (3×n)
-     *   Δq = J_linear⁺ · v · dt
-     *   q_target = q_current + Δq
-     * 
-     * @param current_joint_angles  当前关节角度 (rad)
-     * @param linear_velocity       期望的笛卡尔线速度 (m/s)
-     * @param dt                    时间步长 (s)
-     * @return 目标关节角度，失败时返回空 vector
-     */
-    std::vector<double> jacobian_velocity_to_joint_angles(
-        const std::vector<double>& current_joint_angles,
-        const Eigen::Vector3d& linear_velocity,
-        double dt)
-    {
-        // 构建当前 RobotState
-        moveit::core::RobotState robot_state(robot_model_);
-        for (size_t i = 0; i < joint_names_.size(); ++i) {
-            robot_state.setJointPositions(joint_names_[i], &current_joint_angles[i]);
-        }
-        robot_state.update();
-        
-        // 获取雅可比矩阵 (6×n)，参考点为末端执行器
-        Eigen::MatrixXd full_jacobian;
-        Eigen::Vector3d reference_point(0.0, 0.0, 0.0);  // 末端连杆坐标系原点
-        if (!robot_state.getJacobian(
-                joint_model_group_,
-                robot_state.getLinkModel(end_effector_link_),
-                reference_point,
-                full_jacobian)) {
-            RCLCPP_ERROR(LOGGER, "Failed to compute Jacobian");
-            return {};
-        }
-        
-        // 只取线速度部分 (前3行) → J_linear: 3×n
-        Eigen::MatrixXd J_linear = full_jacobian.topRows(3);
-        
-        // 计算伪逆: J⁺ = Jᵀ(JJᵀ)⁻¹
-        // 加阻尼因子避免奇异点附近求逆不稳定
-        const double damping = 0.005;  // 阻尼因子
-        Eigen::MatrixXd JJt = J_linear * J_linear.transpose();
-        JJt += damping * damping * Eigen::Matrix3d::Identity();  // 阻尼最小二乘
-        
-        // 检查是否接近奇异（条件数过大）
-        Eigen::JacobiSVD<Eigen::MatrixXd> svd(J_linear);
-        double cond = svd.singularValues()(0) / svd.singularValues()(svd.singularValues().size() - 1);
-        if (cond > 100.0) {
-            RCLCPP_WARN(LOGGER, "Near singularity! Condition number: %.1f", cond);
-            // 不返回空，阻尼伪逆本身可以处理，但降低速度
-            // velocity 已经在调用方限速了
-        }
-        
-        Eigen::MatrixXd J_pinv = J_linear.transpose() * JJt.inverse();  // n×3
-        
-        // Δq = J⁺ · v · dt
-        Eigen::VectorXd delta_q = J_pinv * linear_velocity * dt;
-        
-        // 构造目标关节角度
-        std::vector<double> target_angles(current_joint_angles.size());
-        for (size_t i = 0; i < current_joint_angles.size(); ++i) {
-            target_angles[i] = current_joint_angles[i] + delta_q(i);
-        }
-        
-        // 检查关节限位
-        const auto& joint_models = joint_model_group_->getActiveJointModels();
-        for (size_t i = 0; i < joint_models.size(); ++i) {
-            const auto& bounds = joint_models[i]->getVariableBounds();
-            if (!bounds.empty()) {
-                double lo = bounds[0].min_position_;
-                double hi = bounds[0].max_position_;
-                if (target_angles[i] < lo || target_angles[i] > hi) {
-                    RCLCPP_WARN(LOGGER, "Joint %s exceeds limit [%.2f, %.2f]: %.4f, clamping",
-                               joint_names_[i].c_str(), lo, hi, target_angles[i]);
-                    target_angles[i] = std::clamp(target_angles[i], lo, hi);
-                }
-            }
-        }
-        
-        return target_angles;
+
+        serial_node_->send_roboarm_with_controller(
+            latest_torques_, convert_urdf_to_hardware(target_angles));
     }
     
     /**

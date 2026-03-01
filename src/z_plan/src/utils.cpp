@@ -2,6 +2,10 @@
 #include "utils.hpp"
 #include <iostream>
 #include <iomanip>
+#include <moveit/robot_state/robot_state.hpp>
+#include <Eigen/Dense>
+#include <Eigen/SVD>
+
 #include <rclcpp/rclcpp.hpp>
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <moveit/planning_scene_interface/planning_scene_interface.hpp>
@@ -333,124 +337,143 @@ geometry_msgs::msg::Pose compute_target_pose_along_direction(
 }
 
 /**
- * @brief  对控制器输出的关节角度施加 e_hat 方向约束
- * @note   通过 FK 计算末端位姿，消除 e_hat 方向上的位移分量，然后通过 IK 求解新的关节角度
- * @param  controller_joint_angle  控制器输出的 6 个关节角度（弧度）
- * @param  reference_pose  参考位姿（用于确定约束平面）
- * @param  e_hat  e_hat 方向单位向量（指离科技核心）
- * @param  robot_model  MoveIt 机器人模型
- * @param  joint_model_group  关节模型组
- * @param  end_effector_link  末端执行器link名称
- * @param  joint_names  关节名称列表
- * @retval std::vector<std::vector<double>> 约束后的 6 个关节角度的数组（弧度）
+ * @brief  对控制器末端位置施加 e_hat 方向约束，用雅可比伪逆（自适应阻尼最小二乘）求一步关节增量
+ * @note   算法与 test_constraint.cpp::constrained_step() 一致
  */
-std::vector<std::vector<double>> e_hat_direction_constraint(
-    const std::vector<double>& controller_joint_angle,
-    const geometry_msgs::msg::Pose& reference_pose,
-    const Eigen::Vector3d& e_hat,
+std::vector<double> e_hat_direction_constraint(
+    const std::vector<double>& robo_arm_angles,
+    const std::vector<double>& controller_angles,
+    const Eigen::Vector3d& reference_position,
+    const Eigen::Vector3d& e_hat_in,
     const moveit::core::RobotModelConstPtr& robot_model,
     const moveit::core::JointModelGroup* joint_model_group,
     const std::string& end_effector_link,
     const std::vector<std::string>& joint_names,
-    std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group)
+    double dt)
 {
-    moveit::core::RobotStatePtr robot_state = std::make_shared<moveit::core::RobotState>(robot_model);
+    // ── Step 1: FK(controller) → controller_ee ────────────────────────────────
+    moveit::core::RobotState controller_state(robot_model);
+    for (size_t i = 0; i < joint_names.size(); ++i)
+        controller_state.setJointPositions(joint_names[i], &controller_angles[i]);
+    controller_state.update();
+    Eigen::Vector3d controller_ee =
+        controller_state.getGlobalLinkTransform(end_effector_link).translation();
 
-    for (size_t i = 0; i < joint_names.size(); ++i) {
-        robot_state->setJointPositions(joint_names[i], &controller_joint_angle[i]);
-    }
-    robot_state->update();
-    
-    const Eigen::Isometry3d& controller_ee_transform = robot_state->getGlobalLinkTransform(end_effector_link);
-    Eigen::Vector3d controller_position = controller_ee_transform.translation();
-    
-    // 约束平面上的参考点
-    Eigen::Vector3d reference_position(reference_pose.position.x,
-                                       reference_pose.position.y,
-                                       reference_pose.position.z);
-    
-    // 计算控制器输出位置在 e_hat 方向上的分量
-    Eigen::Vector3d displacement = controller_position - reference_position;
-    double e_hat_component = displacement.dot(e_hat); 
-    
-    //消除 e_hat 方向的分量，得到约束后的目标位置
-    Eigen::Vector3d constrained_position = controller_position - e_hat_component * e_hat;
-    
-    RCLCPP_DEBUG(LOGGER, "Constrained position: [%.4f, %.4f, %.4f]", 
-                 constrained_position.x(), constrained_position.y(), constrained_position.z());
-    
-    // 构造约束后的目标位姿（位置修正，姿态保持不变）
-    geometry_msgs::msg::Pose constrained_pose;
-    constrained_pose.position.x = constrained_position.x();
-    constrained_pose.position.y = constrained_position.y();
-    constrained_pose.position.z = constrained_position.z();
-    constrained_pose.orientation = reference_pose.orientation; 
+    // ── Step 2: FK(robo_arm) → current_ee + 雅可比 ────────────────────────────
+    moveit::core::RobotState robot_state(robot_model);
+    for (size_t i = 0; i < joint_names.size(); ++i)
+        robot_state.setJointPositions(joint_names[i], &robo_arm_angles[i]);
+    robot_state.update();
+    Eigen::Vector3d current_ee =
+        robot_state.getGlobalLinkTransform(end_effector_link).translation();
 
+    // ── Step 3: 投影到 e_hat 垂直平面，得到约束目标 ───────────────────────────
+    Eigen::Vector3d e_hat = e_hat_in.normalized();
+    Eigen::Vector3d displacement = controller_ee - reference_position;
+    double e_hat_component = displacement.dot(e_hat);
+    Eigen::Vector3d constrained_target = reference_position + (displacement - e_hat_component * e_hat);
 
-    std::vector<geometry_msgs::msg::Pose> waypoints;
-    //waypoints.push_back(current_end_effector_pose);
-    waypoints.push_back(constrained_pose);
+    // ── Step 4: 速度方向 = current_ee → constrained_target，再去 e_hat 分量 ──
+    Eigen::Vector3d velocity = constrained_target - current_ee;
+    velocity = velocity - velocity.dot(e_hat) * e_hat;   // 双重投影，防止数值漂移
 
-    // 设置目标容差以提高 Cartesian 路径规划的成功率
-    move_group->setGoalPositionTolerance(0.005);      // 5mm 位置容差
-    move_group->setGoalOrientationTolerance(0.05);   // 0.05 弧度姿态容差
+    // ── Step 5: 死区（< 0.5 mm 不动）────────────────────────────────────────
+    double position_error = velocity.norm();
+    const double DEAD_ZONE = 0.0005;   // m
+    if (position_error < DEAD_ZONE) {
+        return robo_arm_angles;  // 已到目标，维持当前角度
+    }
 
-    const double eef_step = 0.01;
-    moveit_msgs::msg::RobotTrajectory trajectory;
-    double fraction = move_group->computeCartesianPath(waypoints, eef_step, trajectory);
-    if (fraction < 0.99) {
-        RCLCPP_WARN(LOGGER, "Only %.2f%% of the path was planned successfully. Returning original angles.", fraction * 100.0);
-        return {controller_joint_angle}; 
+    // ── Step 6: 限速（max 0.15 m/s，乘以 dt 得最大位移）──────────────────────
+    const double MAX_SPEED = 0.45;   // m/s
+    if (position_error > MAX_SPEED) {
+        velocity *= (MAX_SPEED / position_error);
     }
-    
-    // 将 trajectory 转换为二维数组：每个元素是一帧的6个关节角度
-    std::map<std::string, std::vector<double>> trajectory_dict = extractTrajectory(trajectory);
-    std::vector<std::vector<float>> trajectory_2d = trajectory_2d_array(trajectory_dict, joint_names);
-    
-    // 转换为 double 类型的二维数组
-    std::vector<std::vector<double>> result;
-    result.reserve(trajectory_2d.size());
-    for (const auto& frame : trajectory_2d) {
-        std::vector<double> frame_double(frame.begin(), frame.end());
-        result.push_back(frame_double);
-    }
-    
-    RCLCPP_INFO(LOGGER, "Applied e_hat constraint: removed %.4f m displacement along e_hat, generated %zu trajectory frames", 
-                e_hat_component, result.size());
-    
-    return result;
-    
-    /* 使用 MoveIt IK 求解约束后的关节角度
-    从当前控制器角度作为 IK 的种子状态
-    robot_state->setToDefaultValues();
-    for (size_t i = 0; i < joint_names.size(); ++i) {
-        robot_state->setJointPositions(joint_names[i], &controller_joint_angle[i]);
-    }
-    
-    // 转换为 Eigen::Isometry3d
-    Eigen::Isometry3d target_transform = Eigen::Isometry3d::Identity();
-    target_transform.translation() = constrained_position;
-    
-    Eigen::Quaterniond target_quat(constrained_pose.orientation.w,
-                                    constrained_pose.orientation.x,
-                                    constrained_pose.orientation.y,
-                                    constrained_pose.orientation.z);
-    target_transform.linear() = target_quat.toRotationMatrix();
-    
-    // 调用 IK 求解
-    double timeout = 0.1; 
-    bool found_ik = robot_state->setFromIK(joint_model_group, target_transform, end_effector_link, timeout);
-    
-    if (!found_ik) {
-        RCLCPP_WARN(LOGGER, "IK solution not found, using original controller angles");
-        return controller_joint_angle;  // IK 失败，返回原值
-    }
-    
-    // 提取 IK 结果
-    std::vector<double> constrained_joint_angle(joint_names.size());
-    for (size_t i = 0; i < joint_names.size(); ++i) {
-        constrained_joint_angle[i] = *robot_state->getJointPositions(joint_names[i]);
-    }
-    */
-}
 
+    // ── Step 7: 雅可比矩阵（前3行：线速度部分）───────────────────────────────
+    Eigen::MatrixXd full_jacobian;
+    Eigen::Vector3d ref_pt(0.0, 0.0, 0.0);
+    if (!robot_state.getJacobian(
+            joint_model_group,
+            robot_state.getLinkModel(end_effector_link),
+            ref_pt, full_jacobian)) {
+        RCLCPP_ERROR(LOGGER, "e_hat_direction_constraint: failed to compute Jacobian");
+        return {};
+    }
+    Eigen::MatrixXd J_lin = full_jacobian.topRows(3);   // 3 × n
+
+    // ── Step 8: SVD → 条件数 → 自适应阻尼 ───────────────────────────────────
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(J_lin);
+    const Eigen::VectorXd& sv = svd.singularValues();
+    double condition_number = (sv(sv.size() - 1) > 1e-10)
+                              ? sv(0) / sv(sv.size() - 1)
+                              : 1e6;
+
+    const double DAMPING_MIN = 0.005;
+    const double DAMPING_MAX = 0.1;
+    const double COND_LOW    = 50.0;
+    const double COND_HIGH   = 200.0;
+    double damping;
+    if (condition_number <= COND_LOW) {
+        damping = DAMPING_MIN;
+    } else if (condition_number >= COND_HIGH) {
+        damping = DAMPING_MAX;
+    } else {
+        double t = (condition_number - COND_LOW) / (COND_HIGH - COND_LOW);
+        damping = DAMPING_MIN + t * (DAMPING_MAX - DAMPING_MIN);
+    }
+
+    // ── Step 9: J_pinv = Jᵀ(JJᵀ + λ²I)⁻¹；Δq = J_pinv · velocity · dt ──────
+    Eigen::MatrixXd JJt = J_lin * J_lin.transpose()
+                        + (damping * damping) * Eigen::Matrix3d::Identity();
+    Eigen::MatrixXd J_pinv = J_lin.transpose() * JJt.inverse();   // n × 3
+    Eigen::VectorXd delta_q = J_pinv * velocity * dt;
+
+    // ── Step 10: 关节角变化量等比缩放（硬限幅 0.1 rad/cycle）────────────────
+    const double MAX_JOINT_DELTA = 0.1;   // rad
+    double max_dq = delta_q.cwiseAbs().maxCoeff();
+    if (max_dq > MAX_JOINT_DELTA) {
+        delta_q *= (MAX_JOINT_DELTA / max_dq);
+    }
+
+    // ── Step 11: 关节限位裕度等比缩放（MARGIN = 0.05 rad）───────────────────
+    const double JOINT_LIMIT_MARGIN = 0.05;   // rad
+    const auto& joint_models = joint_model_group->getActiveJointModels();
+    double limit_scale = 1.0;
+    for (size_t i = 0; i < joint_models.size(); ++i) {
+        const auto& bounds = joint_models[i]->getVariableBounds();
+        if (bounds.empty()) continue;
+        double target = robo_arm_angles[i] + delta_q(static_cast<Eigen::Index>(i));
+        double lo = bounds[0].min_position_ + JOINT_LIMIT_MARGIN;
+        double hi = bounds[0].max_position_ - JOINT_LIMIT_MARGIN;
+        if (target < lo && delta_q(static_cast<Eigen::Index>(i)) < 0) {
+            double allowed = robo_arm_angles[i] - lo;
+            if (allowed > 0 && std::abs(delta_q(static_cast<Eigen::Index>(i))) > 1e-6)
+                limit_scale = std::min(limit_scale,
+                    allowed / std::abs(delta_q(static_cast<Eigen::Index>(i))));
+            else
+                limit_scale = 0.0;
+        } else if (target > hi && delta_q(static_cast<Eigen::Index>(i)) > 0) {
+            double allowed = hi - robo_arm_angles[i];
+            if (allowed > 0 && std::abs(delta_q(static_cast<Eigen::Index>(i))) > 1e-6)
+                limit_scale = std::min(limit_scale,
+                    allowed / std::abs(delta_q(static_cast<Eigen::Index>(i))));
+            else
+                limit_scale = 0.0;
+        }
+    }
+    if (limit_scale < 1.0) {
+        delta_q *= std::max(limit_scale, 0.0);
+    }
+
+    // ── 构造目标关节角度 ─────────────────────────────────────────────────────
+    std::vector<double> result(robo_arm_angles.size());
+    for (size_t i = 0; i < robo_arm_angles.size(); ++i) {
+        result[i] = robo_arm_angles[i] + delta_q(static_cast<Eigen::Index>(i));
+    }
+
+    RCLCPP_DEBUG(LOGGER,
+        "e_hat_constraint: err=%.4fm cond=%.1f λ=%.4f e_hat_rm=%.4fm dt=%.3fs",
+        position_error, condition_number, damping, e_hat_component, dt);
+
+    return result;}
