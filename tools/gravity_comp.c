@@ -1,0 +1,112 @@
+/* Auto-generated gravity compensation from robo_arm6.urdf */
+/* DO NOT EDIT — regenerate with generate_gravity_comp.py */
+
+#include "gravity_comp.h"
+#include <math.h>
+
+void compute_gravity_torques(const double q[6], double tau[6])
+{
+    const double x0 = 1.0*q[1];
+    const double x1 = sin(x0);
+    const double x2 = cos(x0);
+    const double x3 = 1.0*q[2];
+    const double x4 = sin(x3);
+    const double x5 = 0.0015926524115072898*x1 + 0.99999841465977624*x2;
+    const double x6 = x4*x5;
+    const double x7 = 2.4610203985291057*x6;
+    const double x8 = cos(x3);
+    const double x9 = x5*x8;
+    const double x10 = 0.61292980461040036*x9;
+    const double x11 = 0.99999841465977624*x1 - 0.0015926524115072898*x2;
+    const double x12 = x11*x4;
+    const double x13 = 0.61292980461040036*x12;
+    const double x14 = x11*x8;
+    const double x15 = 2.4610203985291057*x14;
+    const double x16 = 1.0*q[3];
+    const double x17 = sin(x16);
+    const double x18 = -x11;
+    const double x19 = x18*x8;
+    const double x20 = x19 + x6;
+    const double x21 = x17*x20;
+    const double x22 = cos(x16);
+    const double x23 = x20*x22;
+    const double x24 = x18*x4 - x5*x8;
+    const double x25 = x17*x24;
+    const double x26 = x22*x24;
+    const double x27 = 0.99999999998650768*x6;
+    const double x28 = -x24;
+    const double x29 = 3.6732051033465739e-6*x28;
+    const double x30 = 0.99999999998650768*x19 + 1.3492435731251315e-11*x21 - x22*x29 + x27;
+    const double x31 = -x30;
+    const double x32 = 1.0*q[4];
+    const double x33 = sin(x32);
+    const double x34 = 0.004554327527053678*x33;
+    const double x35 = cos(x32);
+    const double x36 = -3.673205103297014e-6*x6;
+    const double x37 = 0.99999999998650768*x22;
+    const double x38 = x17*x29 - 3.673205103297014e-6*x19 + 3.673205103297014e-6*x21 + 1.3492435731251315e-11*x23 - x28*x37 + x36;
+    const double x39 = -x38;
+    const double x40 = 0.004554327527053678*x35;
+    const double x41 = x30*x33 - x35*x38;
+    const double x42 = 1.0*q[5];
+    const double x43 = sin(x42);
+    const double x44 = 4.8350276342100011e-12*x43;
+    const double x45 = cos(x42);
+    const double x46 = 2.4333434047800002e-11*x45;
+    const double x47 = 1.3492435731069271e-11*x14 - 1.3492435731069271e-11*x6;
+    const double x48 = 3.673205103297014e-6*x20*x22 - 1.3492435731069271e-11*x21 - 0.99999999998650768*x25 - 3.673205103297014e-6*x26 + 3.6732051033465739e-6*x31*x35 + 3.6732051033465739e-6*x33*x39 - x47;
+    const double x49 = 2.4333434047800002e-11*x43;
+    const double x50 = 4.8350276342100011e-12*x45;
+    const double x51 = x12 + x9;
+    const double x52 = x17*x51;
+    const double x53 = x22*x51;
+    const double x54 = -x14 + x6;
+    const double x55 = x17*x54;
+    const double x56 = x22*x54;
+    const double x57 = 3.6732051033465739e-6*x51;
+    const double x58 = -0.99999999998650768*x14 - x22*x57 + x27 + 1.3492435731251315e-11*x55;
+    const double x59 = x33*x58;
+    const double x60 = x35*x58;
+    const double x61 = 3.673205103297014e-6*x14 + x17*x57 + x36 - x37*x51 + 3.673205103297014e-6*x55 + 1.3492435731251315e-11*x56;
+    const double x62 = x33*x61;
+    const double x63 = x35*x61 - x59;
+    const double x64 = -3.673205103297014e-6*x56;
+    const double x65 = x47 - 0.99999999998650768*x52 - 3.673205103297014e-6*x53 + 1.3492435731069271e-11*x55 + 3.6732051033465739e-6*x60 + 3.6732051033465739e-6*x62 + x64;
+    const double x66 = 3.6732051033465739e-6*x12 + 3.6732051033465739e-6*x9 - 0.00079632671072789123;
+    const double x67 = x17*x66;
+    const double x68 = x22*x66;
+    const double x69 = x22*x66 - x55;
+    const double x70 = 0.99999999998650768*x55;
+    const double x71 = 3.6732051033465739e-6*x56 + 3.6732051033465739e-6*x67;
+    const double x72 = 0.99999999998650768*x22*x66 - x70 - x71;
+    const double x73 = -x54;
+    const double x74 = x17*x73;
+    const double x75 = -x66;
+    const double x76 = x22*x75;
+    const double x77 = x74 - x76;
+    const double x78 = 3.6732051033465739e-6*x33;
+    const double x79 = x17*x75;
+    const double x80 = 3.6732051033465739e-6*x22*x73 + 0.99999999998650768*x74 - 0.99999999998650768*x76 + 3.6732051033465739e-6*x79;
+    const double x81 = -x35*x80 + x77*x78;
+    const double x82 = x37*x73;
+    const double x83 = 0.99999999998650768*x79;
+    const double x84 = 1.3492435731251315e-11*x35*x77 + 3.673205103297014e-6*x74 - 3.673205103297014e-6*x76 + x78*x80 - x82 - x83;
+    const double x85 = 0.99999999998650768*x12 + x71 + 0.99999999998650768*x9 + 2.9250713377768813e-9;
+    const double x86 = x33*x85;
+    const double x87 = x35*x85;
+    const double x88 = 3.673205103297014e-6*x12 + 3.673205103297014e-6*x9 + 1.074438696557483e-14;
+    const double x89 = -x37*x54 + 3.6732051033465739e-6*x55 - 0.99999999998650768*x67 - 3.6732051033465739e-6*x68 + x88;
+    const double x90 = x35*x89;
+    const double x91 = x86 + x90;
+    const double x92 = -3.6732051033465739e-6*x74 + 3.6732051033465739e-6*x76 + x82 + x83 + x88;
+    const double x93 = -x33*x92 + x87;
+    const double x94 = x35*x92 + x86;
+    const double x95 = 1.3492435731069271e-11*x12 + x64 - 3.673205103297014e-6*x67 + 0.99999999998650768*x68 - x70 + x78*x89 - 3.6732051033465739e-6*x87 + 1.3492435731069271e-11*x9 + 3.9466337034279876e-20;
+
+    tau[0] = 0;
+    tau[1] = 0.0048488576101531258*x1 + x10 + x13 + x15 - 7.0462508110304265*x2 - 4.1580700240799141e-9*x21 - 3.7176175567197674e-8*x23 + 0.010120909266222925*x25 - 0.0011320005028555553*x26 - x31*x34 - 0.33076199315204285*x31*x35 - 0.33076199315204285*x33*x39 + x39*x40 + x41*x44 + x41*x46 + x48*x49 - x48*x50 - x7;
+    tau[2] = -x10 - x13 - x15 + 0.004554327527053678*x35*x61 + x44*x63 + x46*x63 + x49*x65 - x50*x65 + 0.010120909266222925*x52 - 0.0011320005028555553*x53 + 4.1580700240799141e-9*x55 + 3.7176175567197674e-8*x56 - 0.004554327527053678*x59 - 0.33076199315204285*x60 - 0.33076199315204285*x62 + x7;
+    tau[3] = 1.6728979114685353e-8*x33*x69 + 0.33076199315204285*x33*x72 + 1.2149566412391684e-6*x35*x69 - x40*x72 + x44*x81 + x46*x81 - x49*x84 + x50*x84 + 0.0011320005028555553*x55 + 0.010120909266222925*x56 + 0.010120909266222925*x67 - 0.0011320005028555553*x68;
+    tau[4] = -x34*x89 + 8.9381694126326243e-17*x43*x91 + x44*x93 - 1.7760048180801887e-17*x45*x91 + x46*x93 - 0.33076199315204285*x86 + 0.004554327527053678*x87 - 0.33076199315204285*x90;
+    tau[5] = x44*x95 + x46*x95 - x49*x94 + x50*x94;
+}

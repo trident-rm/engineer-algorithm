@@ -308,7 +308,7 @@ std::function<std::vector<float>(const std::vector<double>&)> make_gravity_closu
                 tau_f.push_back(static_cast<float>(tau[static_cast<Eigen::Index>(i - 1)]));
             }
         }
-        RCLCPP_INFO(LOGGER, "gravity closure returning %zu torques", tau_f.size());
+        RCLCPP_DEBUG(LOGGER, "gravity closure returning %zu torques", tau_f.size());
         return tau_f;
     };
 }

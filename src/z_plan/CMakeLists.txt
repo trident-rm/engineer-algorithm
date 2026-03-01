@@ -21,6 +21,7 @@ find_package(graph_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(pinocchio REQUIRED)
+find_package(visualization_msgs REQUIRED)
 find_package(moveit_servo REQUIRED)
 find_package(control_msgs REQUIRED)
 
@@ -161,15 +162,45 @@ ament_target_dependencies(test_constraint
   moveit_core
 )
 
+# Test node for gravity compensation comparison (no hardware dependency)
+add_executable(test_gravity_comp
+  src/test_gravity_comp.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/generated/gravity_comp.c
+)
+target_link_libraries(test_gravity_comp utils pinocchio::pinocchio)
+ament_target_dependencies(test_gravity_comp
+  rclcpp
+  moveit_ros_planning_interface
+  moveit_msgs
+  moveit_core
+)
+
 # Install executables
 set(_install_targets
   z_plan_node
   z_plan_movegroup
   z_plan_movegroup_robo_arm
   test_constraint
+  test_gravity_comp
 )
 if(serial_FOUND)
-  list(APPEND _install_targets real_world real_world_new real_world_servo read_data)
+  # Gravity compensation debug node (requires serial)
+  add_executable(gravity_comp_debug
+    src/gravity_comp_debug.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/generated/gravity_comp.c
+  )
+  target_link_libraries(gravity_comp_debug utils usb_data pinocchio::pinocchio)
+  ament_target_dependencies(gravity_comp_debug
+    rclcpp
+    sensor_msgs
+    moveit_ros_planning_interface
+    moveit_msgs
+    moveit_core
+    serial
+  )
+
+  list(APPEND _install_targets
+    gravity_comp_debug real_world real_world_new real_world_servo read_data)
 endif()
 
 install(TARGETS ${_install_targets}

@@ -1,8 +1,8 @@
 #ifndef GRAVITY_COMP_H
 #define GRAVITY_COMP_H
 
-/* Auto-generated gravity compensation from robo_arm6.urdf */
-/* DO NOT EDIT — regenerate with generate_gravity_comp.py */
+/* Auto-generated RNEA gravity compensation from robo_arm6.urdf */
+/* DO NOT EDIT -- regenerate with generate_gravity_comp_rnea.py */
 
 /**
  * Compute gravity compensation torques for a 6-DOF robot arm.
