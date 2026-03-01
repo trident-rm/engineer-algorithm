@@ -62,7 +62,9 @@ public:
         RCLCPP_INFO(LOGGER, "=== Constraint Control Test Environment ===");
         
         // 读取测试模式参数
-        node_->declare_parameter<std::string>("test_mode", "circle");
+        if (!node_->has_parameter("test_mode")) {
+            node_->declare_parameter<std::string>("test_mode", "circle");
+        }
         node_->get_parameter("test_mode", test_mode_);
         RCLCPP_INFO(LOGGER, "Test mode: %s", test_mode_.c_str());
         
@@ -85,8 +87,8 @@ public:
         RCLCPP_INFO(LOGGER, "Robot: %zu joints, EE: %s", joint_names_.size(), end_effector_link_.c_str());
         
         // 初始位姿（关节角）
-        // 选一个远离奇异点的中间位姿
-        current_joint_angles_ = {0.0, 1.5, -0.5, 1.5, 1.5, 0.0};
+        // 手臂向前伸出、略微抬起，远离奇异点的中间位姿
+        current_joint_angles_ = {0.0, -0.5, 1.0, 0.0, 0.5, 0.0};
         controller_joint_angles_ = current_joint_angles_;
         
         // 计算初始末端位姿作为参考
@@ -277,32 +279,65 @@ private:
         auto sv = svd.singularValues();
         result.condition_number = sv(0) / sv(sv.size() - 1);
         result.near_singularity = result.condition_number > 100.0;
-        
-        // 阻尼伪逆
-        const double damping = 0.005;
+
+        // 自适应阻尼：根据条件数动态调整
+        const double damping_min = 0.005;
+        const double damping_max = 0.1;
+        const double cond_low = 50.0;
+        const double cond_high = 200.0;
+        double damping = damping_min;
+        if (result.condition_number > cond_low) {
+            double t = std::min((result.condition_number - cond_low) / (cond_high - cond_low), 1.0);
+            damping = damping_min + t * (damping_max - damping_min);
+        }
+
         Eigen::MatrixXd JJt = J_lin * J_lin.transpose();
         JJt += damping * damping * Eigen::Matrix3d::Identity();
         Eigen::MatrixXd J_pinv = J_lin.transpose() * JJt.inverse();
-        
+
         Eigen::VectorXd delta_q = J_pinv * result.velocity * dt;
-        
+
+        // 关节角变化量硬限幅：超限时等比缩放全部关节，保持运动方向一致
+        const double MAX_JOINT_DELTA = 0.1;  // rad per cycle
+        double max_dq = delta_q.cwiseAbs().maxCoeff();
+        if (max_dq > MAX_JOINT_DELTA) {
+            delta_q *= (MAX_JOINT_DELTA / max_dq);
+        }
+
+        // 关节限位裕度：接近极限时等比缩回，而非逐关节截断
+        const double JOINT_LIMIT_MARGIN = 0.05;  // rad
+        const auto& joint_models = joint_model_group_->getActiveJointModels();
+        double limit_scale = 1.0;
+        for (size_t i = 0; i < joint_models.size(); ++i) {
+            const auto& bounds = joint_models[i]->getVariableBounds();
+            if (bounds.empty()) continue;
+            double target = robo_arm_angles[i] + delta_q(i);
+            double lo = bounds[0].min_position_ + JOINT_LIMIT_MARGIN;
+            double hi = bounds[0].max_position_ - JOINT_LIMIT_MARGIN;
+            if (target < lo && delta_q(i) < 0) {
+                double allowed = robo_arm_angles[i] - lo;
+                if (allowed > 0 && std::abs(delta_q(i)) > 1e-6)
+                    limit_scale = std::min(limit_scale, allowed / std::abs(delta_q(i)));
+                else
+                    limit_scale = 0.0;
+            } else if (target > hi && delta_q(i) > 0) {
+                double allowed = hi - robo_arm_angles[i];
+                if (allowed > 0 && std::abs(delta_q(i)) > 1e-6)
+                    limit_scale = std::min(limit_scale, allowed / std::abs(delta_q(i)));
+                else
+                    limit_scale = 0.0;
+            }
+        }
+        if (limit_scale < 1.0) {
+            delta_q *= std::max(limit_scale, 0.0);
+        }
+
         // 构造目标角度
         result.target_angles.resize(robo_arm_angles.size());
         for (size_t i = 0; i < robo_arm_angles.size(); ++i) {
             result.target_angles[i] = robo_arm_angles[i] + delta_q(i);
             double dq = std::abs(delta_q(i));
             if (dq > result.max_joint_delta) result.max_joint_delta = dq;
-        }
-        
-        // 关节限位 clamp
-        const auto& joint_models = joint_model_group_->getActiveJointModels();
-        for (size_t i = 0; i < joint_models.size(); ++i) {
-            const auto& bounds = joint_models[i]->getVariableBounds();
-            if (!bounds.empty()) {
-                result.target_angles[i] = std::clamp(
-                    result.target_angles[i],
-                    bounds[0].min_position_, bounds[0].max_position_);
-            }
         }
         
         return result;

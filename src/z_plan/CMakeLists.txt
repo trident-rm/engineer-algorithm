@@ -16,7 +16,7 @@ find_package(trajectory_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(moveit_visual_tools REQUIRED)
 find_package(moveit_msgs REQUIRED)
-find_package(serial REQUIRED)
+find_package(serial QUIET)
 find_package(graph_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(tf2_eigen REQUIRED)
@@ -39,13 +39,19 @@ ament_target_dependencies(utils
 )
 target_link_libraries(utils pinocchio::pinocchio)
 
-add_library(usb_data src/usb_data.cpp)
-ament_target_dependencies(usb_data
-  rclcpp
-  moveit_msgs
-  trajectory_msgs
-  serial
-)
+if(serial_FOUND)
+  message(STATUS "serial library found - building hardware targets")
+
+  add_library(usb_data src/usb_data.cpp)
+  ament_target_dependencies(usb_data
+    rclcpp
+    moveit_msgs
+    trajectory_msgs
+    serial
+  )
+else()
+  message(WARNING "serial library NOT found - hardware targets (real_world, read_data) will not be built")
+endif()
 
 # Add executable for MTC version
 add_executable(z_plan_node src/z_plan_node.cpp)
@@ -84,61 +90,63 @@ ament_target_dependencies(z_plan_movegroup_robo_arm
   trajectory_msgs
 )
 
-# Add executable for real world situation
-add_executable(real_world src/real_world.cpp)
-target_link_libraries(real_world utils usb_data pinocchio::pinocchio)
-ament_target_dependencies(real_world
-  rclcpp
-  geometry_msgs
-  moveit_ros_planning_interface
-  moveit_visual_tools
-  moveit_msgs
-  trajectory_msgs
-  serial
-  tf2_eigen
-)
+if(serial_FOUND)
+  # Add executable for real world situation
+  add_executable(real_world src/real_world.cpp)
+  target_link_libraries(real_world utils usb_data pinocchio::pinocchio)
+  ament_target_dependencies(real_world
+    rclcpp
+    geometry_msgs
+    moveit_ros_planning_interface
+    moveit_visual_tools
+    moveit_msgs
+    trajectory_msgs
+    serial
+    tf2_eigen
+  )
 
-# Add executable for real world new (controller-based control)
-add_executable(real_world_new src/real_world_new.cpp)
-target_link_libraries(real_world_new utils usb_data pinocchio::pinocchio)
-ament_target_dependencies(real_world_new
-  rclcpp
-  geometry_msgs
-  moveit_ros_planning_interface
-  moveit_visual_tools
-  moveit_msgs
-  trajectory_msgs
-  serial
-  tf2_eigen
-  moveit_core
-  moveit_servo
-  control_msgs
-)
+  # Add executable for real world new (controller-based control)
+  add_executable(real_world_new src/real_world_new.cpp)
+  target_link_libraries(real_world_new utils usb_data pinocchio::pinocchio)
+  ament_target_dependencies(real_world_new
+    rclcpp
+    geometry_msgs
+    moveit_ros_planning_interface
+    moveit_visual_tools
+    moveit_msgs
+    trajectory_msgs
+    serial
+    tf2_eigen
+    moveit_core
+    moveit_servo
+    control_msgs
+  )
 
-# Add executable for servo-based real-time control
-add_executable(real_world_servo src/real_world_servo.cpp)
-target_link_libraries(real_world_servo utils usb_data pinocchio::pinocchio)
-ament_target_dependencies(real_world_servo
-  rclcpp
-  geometry_msgs
-  moveit_ros_planning_interface
-  moveit_visual_tools
-  moveit_msgs
-  trajectory_msgs
-  serial
-  tf2_eigen
-  moveit_core
-  moveit_servo
-  control_msgs
-)
+  # Add executable for servo-based real-time control
+  add_executable(real_world_servo src/real_world_servo.cpp)
+  target_link_libraries(real_world_servo utils usb_data pinocchio::pinocchio)
+  ament_target_dependencies(real_world_servo
+    rclcpp
+    geometry_msgs
+    moveit_ros_planning_interface
+    moveit_visual_tools
+    moveit_msgs
+    trajectory_msgs
+    serial
+    tf2_eigen
+    moveit_core
+    moveit_servo
+    control_msgs
+  )
 
-add_executable(read_data src/read_data_test.cpp src/usb_data.cpp)
-ament_target_dependencies(read_data
-  rclcpp
-  sensor_msgs
-  trajectory_msgs
-  serial
-)
+  add_executable(read_data src/read_data_test.cpp src/usb_data.cpp)
+  ament_target_dependencies(read_data
+    rclcpp
+    sensor_msgs
+    trajectory_msgs
+    serial
+  )
+endif()
 
 # Test node for constraint control verification (no hardware dependency)
 add_executable(test_constraint src/test_constraint.cpp)
@@ -154,15 +162,17 @@ ament_target_dependencies(test_constraint
 )
 
 # Install executables
-install(TARGETS
+set(_install_targets
   z_plan_node
   z_plan_movegroup
   z_plan_movegroup_robo_arm
-  real_world
-  real_world_new
-  real_world_servo
-  read_data
   test_constraint
+)
+if(serial_FOUND)
+  list(APPEND _install_targets real_world real_world_new real_world_servo read_data)
+endif()
+
+install(TARGETS ${_install_targets}
   DESTINATION lib/${PROJECT_NAME}
 )
 

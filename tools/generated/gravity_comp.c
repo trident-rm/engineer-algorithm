@@ -1,0 +1,112 @@
+/* Auto-generated gravity compensation from robo_arm6.urdf */
+/* DO NOT EDIT — regenerate with generate_gravity_comp.py */
+
+#include "gravity_comp.h"
+#include <math.h>
+
+void compute_gravity_torques(const float q[6], float tau[6])
+{
+    const float x0 = 1.0f*q[1];
+    const float x1 = sinf(x0);
+    const float x2 = cosf(x0);
+    const float x3 = 1.0f*q[2];
+    const float x4 = sinf(x3);
+    const float x5 = 0.0015926524115072898f*x1 + 0.99999841465977624f*x2;
+    const float x6 = x4*x5;
+    const float x7 = 2.4610203985291057f*x6;
+    const float x8 = cosf(x3);
+    const float x9 = x5*x8;
+    const float x10 = 0.61292980461040036f*x9;
+    const float x11 = 0.99999841465977624f*x1 - 0.0015926524115072898f*x2;
+    const float x12 = x11*x4;
+    const float x13 = 0.61292980461040036f*x12;
+    const float x14 = x11*x8;
+    const float x15 = 2.4610203985291057f*x14;
+    const float x16 = 1.0f*q[3];
+    const float x17 = sinf(x16);
+    const float x18 = -x11;
+    const float x19 = x18*x8;
+    const float x20 = x19 + x6;
+    const float x21 = x17*x20;
+    const float x22 = cosf(x16);
+    const float x23 = x20*x22;
+    const float x24 = x18*x4 - x5*x8;
+    const float x25 = x17*x24;
+    const float x26 = x22*x24;
+    const float x27 = 0.99999999998650768f*x6;
+    const float x28 = -x24;
+    const float x29 = 3.6732051033465739e-6f*x28;
+    const float x30 = 0.99999999998650768f*x19 + 1.3492435731251315e-11f*x21 - x22*x29 + x27;
+    const float x31 = -x30;
+    const float x32 = 1.0f*q[4];
+    const float x33 = sinf(x32);
+    const float x34 = 0.004554327527053678f*x33;
+    const float x35 = cosf(x32);
+    const float x36 = -3.673205103297014e-6f*x6;
+    const float x37 = 0.99999999998650768f*x22;
+    const float x38 = x17*x29 - 3.673205103297014e-6f*x19 + 3.673205103297014e-6f*x21 + 1.3492435731251315e-11f*x23 - x28*x37 + x36;
+    const float x39 = -x38;
+    const float x40 = 0.004554327527053678f*x35;
+    const float x41 = x30*x33 - x35*x38;
+    const float x42 = 1.0f*q[5];
+    const float x43 = sinf(x42);
+    const float x44 = 4.8350276342100011e-12f*x43;
+    const float x45 = cosf(x42);
+    const float x46 = 2.4333434047800002e-11f*x45;
+    const float x47 = 1.3492435731069271e-11f*x14 - 1.3492435731069271e-11f*x6;
+    const float x48 = 3.673205103297014e-6f*x20*x22 - 1.3492435731069271e-11f*x21 - 0.99999999998650768f*x25 - 3.673205103297014e-6f*x26 + 3.6732051033465739e-6f*x31*x35 + 3.6732051033465739e-6f*x33*x39 - x47;
+    const float x49 = 2.4333434047800002e-11f*x43;
+    const float x50 = 4.8350276342100011e-12f*x45;
+    const float x51 = x12 + x9;
+    const float x52 = x17*x51;
+    const float x53 = x22*x51;
+    const float x54 = -x14 + x6;
+    const float x55 = x17*x54;
+    const float x56 = x22*x54;
+    const float x57 = 3.6732051033465739e-6f*x51;
+    const float x58 = -0.99999999998650768f*x14 - x22*x57 + x27 + 1.3492435731251315e-11f*x55;
+    const float x59 = x33*x58;
+    const float x60 = x35*x58;
+    const float x61 = 3.673205103297014e-6f*x14 + x17*x57 + x36 - x37*x51 + 3.673205103297014e-6f*x55 + 1.3492435731251315e-11f*x56;
+    const float x62 = x33*x61;
+    const float x63 = x35*x61 - x59;
+    const float x64 = -3.673205103297014e-6f*x56;
+    const float x65 = x47 - 0.99999999998650768f*x52 - 3.673205103297014e-6f*x53 + 1.3492435731069271e-11f*x55 + 3.6732051033465739e-6f*x60 + 3.6732051033465739e-6f*x62 + x64;
+    const float x66 = 3.6732051033465739e-6f*x12 + 3.6732051033465739e-6f*x9 - 0.00079632671072789123f;
+    const float x67 = x17*x66;
+    const float x68 = x22*x66;
+    const float x69 = x22*x66 - x55;
+    const float x70 = 0.99999999998650768f*x55;
+    const float x71 = 3.6732051033465739e-6f*x56 + 3.6732051033465739e-6f*x67;
+    const float x72 = 0.99999999998650768f*x22*x66 - x70 - x71;
+    const float x73 = -x54;
+    const float x74 = x17*x73;
+    const float x75 = -x66;
+    const float x76 = x22*x75;
+    const float x77 = x74 - x76;
+    const float x78 = 3.6732051033465739e-6f*x33;
+    const float x79 = x17*x75;
+    const float x80 = 3.6732051033465739e-6f*x22*x73 + 0.99999999998650768f*x74 - 0.99999999998650768f*x76 + 3.6732051033465739e-6f*x79;
+    const float x81 = -x35*x80 + x77*x78;
+    const float x82 = x37*x73;
+    const float x83 = 0.99999999998650768f*x79;
+    const float x84 = 1.3492435731251315e-11f*x35*x77 + 3.673205103297014e-6f*x74 - 3.673205103297014e-6f*x76 + x78*x80 - x82 - x83;
+    const float x85 = 0.99999999998650768f*x12 + x71 + 0.99999999998650768f*x9 + 2.9250713377768813e-9f;
+    const float x86 = x33*x85;
+    const float x87 = x35*x85;
+    const float x88 = 3.673205103297014e-6f*x12 + 3.673205103297014e-6f*x9 + 1.074438696557483e-14f;
+    const float x89 = -x37*x54 + 3.6732051033465739e-6f*x55 - 0.99999999998650768f*x67 - 3.6732051033465739e-6f*x68 + x88;
+    const float x90 = x35*x89;
+    const float x91 = x86 + x90;
+    const float x92 = -3.6732051033465739e-6f*x74 + 3.6732051033465739e-6f*x76 + x82 + x83 + x88;
+    const float x93 = -x33*x92 + x87;
+    const float x94 = x35*x92 + x86;
+    const float x95 = 1.3492435731069271e-11f*x12 + x64 - 3.673205103297014e-6f*x67 + 0.99999999998650768f*x68 - x70 + x78*x89 - 3.6732051033465739e-6f*x87 + 1.3492435731069271e-11f*x9 + 3.9466337034279876e-20f;
+
+    tau[0] = 0;
+    tau[1] = 0.0048488576101531258f*x1 + x10 + x13 + x15 - 7.0462508110304265f*x2 - 4.1580700240799141e-9f*x21 - 3.7176175567197674e-8f*x23 + 0.010120909266222925f*x25 - 0.0011320005028555553f*x26 - x31*x34 - 0.33076199315204285f*x31*x35 - 0.33076199315204285f*x33*x39 + x39*x40 + x41*x44 + x41*x46 + x48*x49 - x48*x50 - x7;
+    tau[2] = -x10 - x13 - x15 + 0.004554327527053678f*x35*x61 + x44*x63 + x46*x63 + x49*x65 - x50*x65 + 0.010120909266222925f*x52 - 0.0011320005028555553f*x53 + 4.1580700240799141e-9f*x55 + 3.7176175567197674e-8f*x56 - 0.004554327527053678f*x59 - 0.33076199315204285f*x60 - 0.33076199315204285f*x62 + x7;
+    tau[3] = 1.6728979114685353e-8f*x33*x69 + 0.33076199315204285f*x33*x72 + 1.2149566412391684e-6f*x35*x69 - x40*x72 + x44*x81 + x46*x81 - x49*x84 + x50*x84 + 0.0011320005028555553f*x55 + 0.010120909266222925f*x56 + 0.010120909266222925f*x67 - 0.0011320005028555553f*x68;
+    tau[4] = -x34*x89 + 8.9381694126326243e-17f*x43*x91 + x44*x93 - 1.7760048180801887e-17f*x45*x91 + x46*x93 - 0.33076199315204285f*x86 + 0.004554327527053678f*x87 - 0.33076199315204285f*x90;
+    tau[5] = x44*x95 + x46*x95 - x49*x94 + x50*x94;
+}
