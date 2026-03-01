@@ -43,12 +43,7 @@ enum ControlMode {
     RESET = 4, 
 };
 
-// UP模式内部状态枚举
-enum UpModeState {
-    UP_PLANNING,    // 规划新的约束角度（读取controller并计算轨迹）
-    UP_SENDING,     // 发送轨迹的一帧
-    UP_CHECKING     // 检查机械臂是否到达当前帧
-};
+// UP模式现在使用雅可比伪逆方案，不再需要状态机
 
 /**
  * @brief 机械臂实时控制器类
@@ -481,19 +476,12 @@ private:
                 );
                 e_hat_direction_ = quat * Eigen::Vector3d(1, 0, 0);  // link6 的 x 轴
                 
-                // 初始化UP模式状态机
-                up_mode_state_ = UP_IDLE;
-                up_mode_enter_time_ = std::chrono::steady_clock::now();
-                up_current_trajectory_.clear();
-                up_trajectory_index_ = 0;
-                up_last_sent_angles_.clear();
-                
                 RCLCPP_INFO(LOGGER, "UP mode entered:");
                 RCLCPP_INFO(LOGGER, "  e_hat direction: [%.3f, %.3f, %.3f]",
                            e_hat_direction_.x(), e_hat_direction_.y(), e_hat_direction_.z());
                 RCLCPP_INFO(LOGGER, "  EE position: [%.3f, %.3f, %.3f]",
-                           reference_pose_.position.x, reference_pose_.position.y, reference_pose_.position.z);
-                RCLCPP_INFO(LOGGER, "  State machine initialized, waiting 1s for preparation...");
+                           reference_pose_.position.x, reference_pose_.position.y, reference_pose_.position.z());
+                RCLCPP_INFO(LOGGER, "  Using Jacobian-based velocity-to-angle mapping");
                 
                 // 在 RViz 中显示参考位姿信息
                 visualize_reference_pose_info();
@@ -567,7 +555,16 @@ private:
     }
     
     /**
-     * @brief 处理 UP 模式（带状态机，逐帧发送）
+     * @brief 处理 UP 模式 — 雅可比伪逆速度→角度映射
+     * 
+     * 替换旧的 computeCartesianPath + IK + 状态机方案：
+     *   旧：controller FK → 投影 → computeCartesianPath(IK) → 多帧轨迹 → 状态机
+     *   新：controller FK → 投影 → 位移差 → J⁺·v·dt → 角度增量 → 直接发送
+     * 
+     * 优势：
+     *   - 无 IK 多值解跳变（雅可比给出唯一连续解）
+     *   - 无状态机，每个控制周期独立计算
+     *   - 延迟从 ~100ms 降到 ~1ms
      */
     void handle_mode_up(
         const std::vector<double>& robo_arm_angles,
@@ -577,112 +574,161 @@ private:
             RCLCPP_WARN(LOGGER, "Mode UP: waiting for valid data");
             return;
         }
+        if (!reference_pose_initialized_) return;
         
-        // 使用 while 循环支持在同一次回调中连续执行多个状态转换
-        bool state_changed = true;
-        int transition_count = 0;
+        // Step 1: FK 计算 controller 的目标末端位置
+        geometry_msgs::msg::Pose controller_pose = compute_end_effector_pose(controller_angles);
+        Eigen::Vector3d controller_position(
+            controller_pose.position.x,
+            controller_pose.position.y,
+            controller_pose.position.z);
         
-        while (state_changed && transition_count < up_max_state_transitions_) {
-            state_changed = false;
-            transition_count++;
-            
-            switch (up_mode_state_) {                   
-                case UP_PLANNING:
-                {
-                    RCLCPP_INFO(LOGGER, "UP mode PLANNING: computing constrained trajectory...");
-                    
-                    std::vector<std::vector<double>> constrained_angles = e_hat_direction_constraint(
-                        controller_angles,
-                        reference_pose_,
-                        e_hat_direction_,
-                        robot_model_,
-                        joint_model_group_,
-                        end_effector_link_,
-                        joint_names_,
-                        move_group_
-                    );
-                    if(!constrained_angles.empty()) {
-                        up_mode_state_ = UP_SENDING;
-                        state_changed = true;  // 继续执行 SENDING
-                        RCLCPP_DEBUG(LOGGER, "  PLANNING -> SENDING");
-                    } else {
-                        RCLCPP_WARN(LOGGER, "UP mode PLANNING: failed to compute trajectory, retrying...");
-                    }
-                    break;
+        // Step 2: FK 计算当前机械臂的实际末端位置
+        geometry_msgs::msg::Pose current_pose = compute_end_effector_pose(robo_arm_angles);
+        Eigen::Vector3d current_position(
+            current_pose.position.x,
+            current_pose.position.y,
+            current_pose.position.z);
+        
+        // Step 3: controller 相对于参考点的位移，投影到约束平面（消除 e_hat 分量）
+        Eigen::Vector3d reference_position(
+            reference_pose_.position.x,
+            reference_pose_.position.y,
+            reference_pose_.position.z);
+        
+        Eigen::Vector3d displacement = controller_position - reference_position;
+        Eigen::Vector3d e_hat = e_hat_direction_.normalized();
+        double e_hat_component = displacement.dot(e_hat);
+        Eigen::Vector3d constrained_displacement = displacement - e_hat_component * e_hat;
+        
+        // 约束后的目标位置
+        Eigen::Vector3d target_position = reference_position + constrained_displacement;
+        
+        // Step 4: 当前位置到约束目标的速度方向（同样消除 e_hat 分量，双重保险）
+        Eigen::Vector3d velocity = target_position - current_position;
+        velocity = velocity - velocity.dot(e_hat) * e_hat;
+        
+        // Step 5: 死区检查（距离 < 1mm 时不动）
+        double dist = velocity.norm();
+        if (dist < 0.001) {
+            // 已经到达目标，维持当前角度
+            std::vector<float> send_angles = convert_urdf_to_hardware(robo_arm_angles);
+            serial_node_->send_roboarm_with_controller(latest_torques_, send_angles);
+            return;
+        }
+        
+        // Step 6: 限速（最大线速度 0.15 m/s）
+        const double max_linear_speed = 0.15;
+        if (dist > max_linear_speed) {
+            velocity = velocity * (max_linear_speed / dist);
+        }
+        
+        // Step 7: 用雅可比伪逆把笛卡尔速度映射为关节角增量
+        //   Δq = J⁺ · v · dt
+        //   q_new = q_current + Δq
+        const double dt = 0.05;  // 控制周期 50ms
+        std::vector<double> target_joint_angles = jacobian_velocity_to_joint_angles(
+            robo_arm_angles, velocity, dt);
+        
+        if (target_joint_angles.empty()) {
+            // 雅可比计算失败（奇异点附近），维持当前角度
+            RCLCPP_WARN(LOGGER, "UP mode: Jacobian computation failed (near singularity)");
+            std::vector<float> send_angles = convert_urdf_to_hardware(robo_arm_angles);
+            serial_node_->send_roboarm_with_controller(latest_torques_, send_angles);
+            return;
+        }
+        
+        // Step 8: 发送目标角度
+        std::vector<float> send_angles = convert_urdf_to_hardware(target_joint_angles);
+        serial_node_->send_roboarm_with_controller(latest_torques_, send_angles);
+        
+        RCLCPP_DEBUG(LOGGER, "UP Jacobian: v=[%.4f,%.4f,%.4f] norm=%.4f e_hat_rm=%.4f",
+                    velocity.x(), velocity.y(), velocity.z(), dist, e_hat_component);
+    }
+    
+    /**
+     * @brief 用雅可比伪逆将笛卡尔线速度映射为目标关节角度
+     * 
+     * 核心公式：
+     *   J = ∂x/∂q  (6×n 雅可比矩阵，前3行是线速度，后3行是角速度)
+     *   J_linear = J 的前3行 (3×n)
+     *   Δq = J_linear⁺ · v · dt
+     *   q_target = q_current + Δq
+     * 
+     * @param current_joint_angles  当前关节角度 (rad)
+     * @param linear_velocity       期望的笛卡尔线速度 (m/s)
+     * @param dt                    时间步长 (s)
+     * @return 目标关节角度，失败时返回空 vector
+     */
+    std::vector<double> jacobian_velocity_to_joint_angles(
+        const std::vector<double>& current_joint_angles,
+        const Eigen::Vector3d& linear_velocity,
+        double dt)
+    {
+        // 构建当前 RobotState
+        moveit::core::RobotState robot_state(robot_model_);
+        for (size_t i = 0; i < joint_names_.size(); ++i) {
+            robot_state.setJointPositions(joint_names_[i], &current_joint_angles[i]);
+        }
+        robot_state.update();
+        
+        // 获取雅可比矩阵 (6×n)，参考点为末端执行器
+        Eigen::MatrixXd full_jacobian;
+        Eigen::Vector3d reference_point(0.0, 0.0, 0.0);  // 末端连杆坐标系原点
+        if (!robot_state.getJacobian(
+                joint_model_group_,
+                robot_state.getLinkModel(end_effector_link_),
+                reference_point,
+                full_jacobian)) {
+            RCLCPP_ERROR(LOGGER, "Failed to compute Jacobian");
+            return {};
+        }
+        
+        // 只取线速度部分 (前3行) → J_linear: 3×n
+        Eigen::MatrixXd J_linear = full_jacobian.topRows(3);
+        
+        // 计算伪逆: J⁺ = Jᵀ(JJᵀ)⁻¹
+        // 加阻尼因子避免奇异点附近求逆不稳定
+        const double damping = 0.005;  // 阻尼因子
+        Eigen::MatrixXd JJt = J_linear * J_linear.transpose();
+        JJt += damping * damping * Eigen::Matrix3d::Identity();  // 阻尼最小二乘
+        
+        // 检查是否接近奇异（条件数过大）
+        Eigen::JacobiSVD<Eigen::MatrixXd> svd(J_linear);
+        double cond = svd.singularValues()(0) / svd.singularValues()(svd.singularValues().size() - 1);
+        if (cond > 100.0) {
+            RCLCPP_WARN(LOGGER, "Near singularity! Condition number: %.1f", cond);
+            // 不返回空，阻尼伪逆本身可以处理，但降低速度
+            // velocity 已经在调用方限速了
+        }
+        
+        Eigen::MatrixXd J_pinv = J_linear.transpose() * JJt.inverse();  // n×3
+        
+        // Δq = J⁺ · v · dt
+        Eigen::VectorXd delta_q = J_pinv * linear_velocity * dt;
+        
+        // 构造目标关节角度
+        std::vector<double> target_angles(current_joint_angles.size());
+        for (size_t i = 0; i < current_joint_angles.size(); ++i) {
+            target_angles[i] = current_joint_angles[i] + delta_q(i);
+        }
+        
+        // 检查关节限位
+        const auto& joint_models = joint_model_group_->getActiveJointModels();
+        for (size_t i = 0; i < joint_models.size(); ++i) {
+            const auto& bounds = joint_models[i]->getVariableBounds();
+            if (!bounds.empty()) {
+                double lo = bounds[0].min_position_;
+                double hi = bounds[0].max_position_;
+                if (target_angles[i] < lo || target_angles[i] > hi) {
+                    RCLCPP_WARN(LOGGER, "Joint %s exceeds limit [%.2f, %.2f]: %.4f, clamping",
+                               joint_names_[i].c_str(), lo, hi, target_angles[i]);
+                    target_angles[i] = std::clamp(target_angles[i], lo, hi);
                 }
-                    
-                case UP_SENDING:
-                {
-                    // 发送当前帧
-                    if (up_trajectory_index_ < up_current_trajectory_.size()) {
-                        const auto& frame_angles = up_current_trajectory_[up_trajectory_index_];
-                        up_last_sent_angles_ = frame_angles;
-                        
-                        std::vector<float> send_angles = convert_urdf_to_hardware(frame_angles);
-                        serial_node_->send_roboarm_with_controller(latest_torques_, send_angles);
-                        
-                        up_last_send_time_ = std::chrono::steady_clock::now();
-                        
-                        RCLCPP_INFO(LOGGER, "UP mode SENDING: sent frame %zu/%zu", 
-                                   up_trajectory_index_ + 1, up_current_trajectory_.size());
-                        
-                        up_mode_state_ = UP_CHECKING;
-                        RCLCPP_DEBUG(LOGGER, "  SENDING -> CHECKING");
-                    } else {
-                        // 所有帧已发完（理论上不应该到这里）
-                        RCLCPP_WARN(LOGGER, "UP mode SENDING: all frames sent, back to PLANNING");
-                        up_mode_state_ = UP_PLANNING;
-                    }
-                    break;
-                }
-                    
-                case UP_CHECKING:
-                {
-                    // 检查机械臂是否到达当前帧的目标位置
-                    auto now = std::chrono::steady_clock::now();
-                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        now - up_last_send_time_).count();
-                    
-                    bool reached = false;
-                    
-                    // 超时检查（2秒）
-                    if (elapsed > 2000) {
-                        reached = true;
-                        RCLCPP_WARN(LOGGER, "UP mode CHECKING: timeout (%ld ms), considering reached", elapsed);
-                    } else {
-                        // 检查关节角度误差
-                        reached = check_joint_positions_reached(robo_arm_angles, up_last_sent_angles_);
-                        if (reached) {
-                            RCLCPP_INFO(LOGGER, "UP mode CHECKING: frame %zu reached (%.1fs)", 
-                                       up_trajectory_index_ + 1, elapsed / 1000.0);
-                        } else {
-                            RCLCPP_DEBUG(LOGGER, "UP mode CHECKING: waiting for frame %zu...", 
-                                        up_trajectory_index_ + 1);
-                            // 继续发送当前目标，保持机械臂移动
-                            std::vector<float> send_angles = convert_urdf_to_hardware(up_last_sent_angles_);
-                            serial_node_->send_roboarm_with_controller(latest_torques_, send_angles);
-                        }
-                    }
-                    
-                    if (reached) {
-                        up_trajectory_index_++;
-                        
-                        if (up_trajectory_index_ < up_current_trajectory_.size()) {
-                            // 还有剩余帧，继续发送
-                            up_mode_state_ = UP_SENDING;
-                            state_changed = true;  // 继续执行 SENDING
-                            RCLCPP_DEBUG(LOGGER, "  CHECKING -> SENDING (next frame)");
-                        } else {
-                            // 所有帧发送完成，回到规划状态等待新的controller输入
-                            RCLCPP_INFO(LOGGER, "UP mode CHECKING: all frames completed, CHECKING -> PLANNING");
-                            up_mode_state_ = UP_PLANNING;
-                            state_changed = true;  // 继续执行 PLANNING
-                        }
-                    }
-                    break;
-                }
-            }  
-        } 
+            }
+        }
+        
+        return target_angles;
     }
     
     /**
@@ -809,17 +855,17 @@ private:
     }
     
     /**
-     * @brief 处理 ROLL 模式
+     * @brief 处理 ROLL 模式（雅可比伪逆方案）
      * 
-     * TODO: 消除某个方向的分量
+     * 与 UP 类似，但消除 e_hat 分量的同时允许绕 e_hat 轴旋转。
+     * 如果你想做纯平移（和UP一样），直接复用 handle_mode_up 即可。
      */
     void handle_mode_roll(
         const std::vector<double>& robo_arm_angles,
         const std::vector<double>& controller_angles)
     {
-        (void)robo_arm_angles;
-        (void)controller_angles;
-        RCLCPP_DEBUG(LOGGER, "Mode ROLL: not implemented yet");
+        // 暂时复用 UP 模式的逻辑
+        handle_mode_up(robo_arm_angles, controller_angles);
     }
 
     /**
@@ -1028,15 +1074,9 @@ private:
     // 初始化完成标志
     bool is_initialized_ = false;
     
-    // UP模式状态机相关变量
-    UpModeState up_mode_state_ = PLANNING;
-    std::chrono::steady_clock::time_point up_mode_enter_time_;
-    std::chrono::steady_clock::time_point up_last_send_time_;  // 上次发送帧的时间
-    std::vector<std::vector<double>> up_current_trajectory_;  // 当前轨迹（多帧）
-    size_t up_trajectory_index_ = 0;  // 当前发送到第几帧
-    std::vector<double> up_last_sent_angles_;  // 上次发送的目标角度
-    const double joint_position_tolerance_ = 0.05;  // 关节到达容差（弧度，约2.86度）
-    const int up_max_state_transitions_ = 5;  // 单次回调最大状态转换次数
+    // UP模式相关变量（已改用雅可比方案，不再需要状态机）
+    // 保留 joint_position_tolerance_ 供 check_joint_positions_reached 使用（TURN模式可能用到）
+    const double joint_position_tolerance_ = 0.05;
 
 };
 

@@ -21,6 +21,8 @@ find_package(graph_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(pinocchio REQUIRED)
+find_package(moveit_servo REQUIRED)
+find_package(control_msgs REQUIRED)
 
 # Include directories
 include_directories(include)
@@ -109,6 +111,25 @@ ament_target_dependencies(real_world_new
   serial
   tf2_eigen
   moveit_core
+  moveit_servo
+  control_msgs
+)
+
+# Add executable for servo-based real-time control
+add_executable(real_world_servo src/real_world_servo.cpp)
+target_link_libraries(real_world_servo utils usb_data pinocchio::pinocchio)
+ament_target_dependencies(real_world_servo
+  rclcpp
+  geometry_msgs
+  moveit_ros_planning_interface
+  moveit_visual_tools
+  moveit_msgs
+  trajectory_msgs
+  serial
+  tf2_eigen
+  moveit_core
+  moveit_servo
+  control_msgs
 )
 
 add_executable(read_data src/read_data_test.cpp src/usb_data.cpp)
@@ -119,6 +140,19 @@ ament_target_dependencies(read_data
   serial
 )
 
+# Test node for constraint control verification (no hardware dependency)
+add_executable(test_constraint src/test_constraint.cpp)
+target_link_libraries(test_constraint utils pinocchio::pinocchio)
+ament_target_dependencies(test_constraint
+  rclcpp
+  geometry_msgs
+  sensor_msgs
+  moveit_ros_planning_interface
+  moveit_visual_tools
+  moveit_msgs
+  moveit_core
+)
+
 # Install executables
 install(TARGETS
   z_plan_node
@@ -126,7 +160,9 @@ install(TARGETS
   z_plan_movegroup_robo_arm
   real_world
   real_world_new
+  real_world_servo
   read_data
+  test_constraint
   DESTINATION lib/${PROJECT_NAME}
 )
 

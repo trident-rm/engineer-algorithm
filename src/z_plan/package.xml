@@ -19,6 +19,13 @@
   <depend>usb_data</depend>
   <depend>utils</depend>
   <depend>pinocchio</depend>
+  <depend>moveit_servo</depend>
+  <depend>control_msgs</depend>
+  <depend>moveit_core</depend>
+  <depend>moveit_visual_tools</depend>
+  <depend>moveit_msgs</depend>
+  <depend>trajectory_msgs</depend>
+  <depend>serial</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
