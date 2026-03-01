@@ -198,17 +198,17 @@ z_plan_uninstall/fast:
 .PHONY : z_plan_uninstall/fast
 
 #=============================================================================
-# Target rules for targets named trajectory_utils
+# Target rules for targets named utils
 
 # Build rule for target.
-trajectory_utils: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 trajectory_utils
-.PHONY : trajectory_utils
+utils: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 utils
+.PHONY : utils
 
 # fast build rule for target.
-trajectory_utils/fast:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/trajectory_utils.dir/build.make CMakeFiles/trajectory_utils.dir/build
-.PHONY : trajectory_utils/fast
+utils/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/utils.dir/build.make CMakeFiles/utils.dir/build
+.PHONY : utils/fast
 
 #=============================================================================
 # Target rules for targets named usb_data
@@ -276,6 +276,19 @@ real_world/fast:
 .PHONY : real_world/fast
 
 #=============================================================================
+# Target rules for targets named real_world_new
+
+# Build rule for target.
+real_world_new: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 real_world_new
+.PHONY : real_world_new
+
+# fast build rule for target.
+real_world_new/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/real_world_new.dir/build.make CMakeFiles/real_world_new.dir/build
+.PHONY : real_world_new/fast
+
+#=============================================================================
 # Target rules for targets named read_data
 
 # Build rule for target.
@@ -336,29 +349,29 @@ src/real_world.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/real_world.dir/build.make CMakeFiles/real_world.dir/src/real_world.cpp.s
 .PHONY : src/real_world.cpp.s
 
-src/trajectory_utils.o: src/trajectory_utils.cpp.o
-.PHONY : src/trajectory_utils.o
+src/real_world_new.o: src/real_world_new.cpp.o
+.PHONY : src/real_world_new.o
 
 # target to build an object file
-src/trajectory_utils.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/trajectory_utils.dir/build.make CMakeFiles/trajectory_utils.dir/src/trajectory_utils.cpp.o
-.PHONY : src/trajectory_utils.cpp.o
+src/real_world_new.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/real_world_new.dir/build.make CMakeFiles/real_world_new.dir/src/real_world_new.cpp.o
+.PHONY : src/real_world_new.cpp.o
 
-src/trajectory_utils.i: src/trajectory_utils.cpp.i
-.PHONY : src/trajectory_utils.i
+src/real_world_new.i: src/real_world_new.cpp.i
+.PHONY : src/real_world_new.i
 
 # target to preprocess a source file
-src/trajectory_utils.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/trajectory_utils.dir/build.make CMakeFiles/trajectory_utils.dir/src/trajectory_utils.cpp.i
-.PHONY : src/trajectory_utils.cpp.i
+src/real_world_new.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/real_world_new.dir/build.make CMakeFiles/real_world_new.dir/src/real_world_new.cpp.i
+.PHONY : src/real_world_new.cpp.i
 
-src/trajectory_utils.s: src/trajectory_utils.cpp.s
-.PHONY : src/trajectory_utils.s
+src/real_world_new.s: src/real_world_new.cpp.s
+.PHONY : src/real_world_new.s
 
 # target to generate assembly for a file
-src/trajectory_utils.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/trajectory_utils.dir/build.make CMakeFiles/trajectory_utils.dir/src/trajectory_utils.cpp.s
-.PHONY : src/trajectory_utils.cpp.s
+src/real_world_new.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/real_world_new.dir/build.make CMakeFiles/real_world_new.dir/src/real_world_new.cpp.s
+.PHONY : src/real_world_new.cpp.s
 
 src/usb_data.o: src/usb_data.cpp.o
 .PHONY : src/usb_data.o
@@ -386,6 +399,30 @@ src/usb_data.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/usb_data.dir/build.make CMakeFiles/usb_data.dir/src/usb_data.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/read_data.dir/build.make CMakeFiles/read_data.dir/src/usb_data.cpp.s
 .PHONY : src/usb_data.cpp.s
+
+src/utils.o: src/utils.cpp.o
+.PHONY : src/utils.o
+
+# target to build an object file
+src/utils.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/utils.dir/build.make CMakeFiles/utils.dir/src/utils.cpp.o
+.PHONY : src/utils.cpp.o
+
+src/utils.i: src/utils.cpp.i
+.PHONY : src/utils.i
+
+# target to preprocess a source file
+src/utils.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/utils.dir/build.make CMakeFiles/utils.dir/src/utils.cpp.i
+.PHONY : src/utils.cpp.i
+
+src/utils.s: src/utils.cpp.s
+.PHONY : src/utils.s
+
+# target to generate assembly for a file
+src/utils.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/utils.dir/build.make CMakeFiles/utils.dir/src/utils.cpp.s
+.PHONY : src/utils.cpp.s
 
 src/z_plan_movegroup.o: src/z_plan_movegroup.cpp.o
 .PHONY : src/z_plan_movegroup.o
@@ -476,8 +513,9 @@ help:
 	@echo "... z_plan_uninstall"
 	@echo "... read_data"
 	@echo "... real_world"
-	@echo "... trajectory_utils"
+	@echo "... real_world_new"
 	@echo "... usb_data"
+	@echo "... utils"
 	@echo "... z_plan_movegroup"
 	@echo "... z_plan_movegroup_robo_arm"
 	@echo "... z_plan_node"
@@ -487,12 +525,15 @@ help:
 	@echo "... src/real_world.o"
 	@echo "... src/real_world.i"
 	@echo "... src/real_world.s"
-	@echo "... src/trajectory_utils.o"
-	@echo "... src/trajectory_utils.i"
-	@echo "... src/trajectory_utils.s"
+	@echo "... src/real_world_new.o"
+	@echo "... src/real_world_new.i"
+	@echo "... src/real_world_new.s"
 	@echo "... src/usb_data.o"
 	@echo "... src/usb_data.i"
 	@echo "... src/usb_data.s"
+	@echo "... src/utils.o"
+	@echo "... src/utils.i"
+	@echo "... src/utils.s"
 	@echo "... src/z_plan_movegroup.o"
 	@echo "... src/z_plan_movegroup.i"
 	@echo "... src/z_plan_movegroup.s"

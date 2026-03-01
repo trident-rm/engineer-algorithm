@@ -3,7 +3,7 @@
 #include <moveit_msgs/msg/display_robot_state.hpp>
 #include <moveit_msgs/msg/display_trajectory.hpp>
 #include <moveit_visual_tools/moveit_visual_tools.h>
-#include "trajectory_utils.hpp"
+#include "utils.hpp"
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("z_plan_movegroup");
 

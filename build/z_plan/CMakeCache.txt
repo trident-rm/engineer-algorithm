@@ -25,7 +25,7 @@ AMENT_CMAKE_ENVIRONMENT_PARENT_PREFIX_PATH_GENERATION:BOOL=ON
 
 //Replace the CMake install command with a custom implementation
 // using symlinks instead of copying resources
-AMENT_CMAKE_SYMLINK_INSTALL:BOOL=OFF
+AMENT_CMAKE_SYMLINK_INSTALL:BOOL=1
 
 //Generate an uninstall target to revert the effects of the install
 // step
@@ -67,12 +67,18 @@ BULLET_SOFTBODY_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libBulletSoftBody.so
 //Path to a library.
 BULLET_SOFTBODY_LIBRARY_DEBUG:FILEPATH=BULLET_SOFTBODY_LIBRARY_DEBUG-NOTFOUND
 
+//Boost chrono library (debug)
+Boost_CHRONO_LIBRARY_DEBUG:FILEPATH=/usr/lib/x86_64-linux-gnu/libboost_chrono.so
+
 Boost_CHRONO_LIBRARY_RELEASE:STRING=/usr/lib/x86_64-linux-gnu/libboost_chrono.so.1.83.0
 
 Boost_DATE_TIME_LIBRARY_RELEASE:STRING=/usr/lib/x86_64-linux-gnu/libboost_date_time.so.1.83.0
 
 //The directory containing a CMake configuration file for Boost.
 Boost_DIR:PATH=/usr/lib/x86_64-linux-gnu/cmake/Boost-1.83.0
+
+//Boost filesystem library (debug)
+Boost_FILESYSTEM_LIBRARY_DEBUG:FILEPATH=/usr/lib/x86_64-linux-gnu/libboost_filesystem.so
 
 Boost_FILESYSTEM_LIBRARY_RELEASE:STRING=/usr/lib/x86_64-linux-gnu/libboost_filesystem.so.1.83.0
 
@@ -81,11 +87,29 @@ Boost_INCLUDE_DIR:PATH=/usr/include
 
 Boost_IOSTREAMS_LIBRARY_RELEASE:STRING=/usr/lib/x86_64-linux-gnu/libboost_iostreams.so.1.83.0
 
+//Boost library directory DEBUG
+Boost_LIBRARY_DIR_DEBUG:PATH=/usr/lib/x86_64-linux-gnu
+
+//Boost library directory RELEASE
+Boost_LIBRARY_DIR_RELEASE:PATH=/usr/lib/x86_64-linux-gnu
+
 Boost_PROGRAM_OPTIONS_LIBRARY_RELEASE:STRING=/usr/lib/x86_64-linux-gnu/libboost_program_options.so.1.83.0
+
+//Boost python312 library (debug)
+Boost_PYTHON312_LIBRARY_DEBUG:FILEPATH=/usr/lib/x86_64-linux-gnu/libboost_python312.so
+
+//Boost python312 library (release)
+Boost_PYTHON312_LIBRARY_RELEASE:FILEPATH=/usr/lib/x86_64-linux-gnu/libboost_python312.so
 
 Boost_REGEX_LIBRARY_RELEASE:STRING=/usr/lib/x86_64-linux-gnu/libboost_regex.so.1.83.0
 
+//Boost serialization library (debug)
+Boost_SERIALIZATION_LIBRARY_DEBUG:FILEPATH=/usr/lib/x86_64-linux-gnu/libboost_serialization.so
+
 Boost_SERIALIZATION_LIBRARY_RELEASE:STRING=/usr/lib/x86_64-linux-gnu/libboost_serialization.so.1.83.0
+
+//Boost system library (debug)
+Boost_SYSTEM_LIBRARY_DEBUG:FILEPATH=/usr/lib/x86_64-linux-gnu/libboost_system.so
 
 Boost_SYSTEM_LIBRARY_RELEASE:STRING=/usr/lib/x86_64-linux-gnu/libboost_system.so.1.83.0
 
@@ -292,6 +316,9 @@ CMAKE_TAPI:FILEPATH=CMAKE_TAPI-NOTFOUND
 // Studio IDE projects all commands are done without /nologo.
 CMAKE_VERBOSE_MAKEFILE:BOOL=FALSE
 
+//Set CMAKE_CXX_STANDARD if a dependency require it
+ENFORCE_MINIMAL_CXX_STANDARD:BOOL=OFF
+
 //The directory containing a CMake configuration file for Eigen3.
 Eigen3_DIR:PATH=/usr/share/eigen3/cmake
 
@@ -381,6 +408,12 @@ PKG_CONFIG_ARGN:STRING=
 
 //pkg-config executable
 PKG_CONFIG_EXECUTABLE:FILEPATH=/usr/bin/pkg-config
+
+//Enable Debian-style Python package layout
+PYTHON_DEB_LAYOUT:BOOL=OFF
+
+//Enable standard Python package layout
+PYTHON_STANDARD_LAYOUT:BOOL=ON
 
 //The directory containing a CMake configuration file for Qt5Core.
 Qt5Core_DIR:PATH=/usr/lib/x86_64-linux-gnu/cmake/Qt5Core
@@ -988,6 +1021,9 @@ eigen3_cmake_module_DIR:PATH=/opt/ros/jazzy/share/eigen3_cmake_module/cmake
 //The directory containing a CMake configuration file for eigen_stl_containers.
 eigen_stl_containers_DIR:PATH=/opt/ros/jazzy/share/eigen_stl_containers/cmake
 
+//The directory containing a CMake configuration file for eigenpy.
+eigenpy_DIR:PATH=/opt/ros/jazzy/lib/x86_64-linux-gnu/cmake/eigenpy
+
 //The directory containing a CMake configuration file for fastcdr.
 fastcdr_DIR:PATH=/opt/ros/jazzy/lib/cmake/fastcdr
 
@@ -1017,6 +1053,9 @@ geometry_msgs_DIR:PATH=/opt/ros/jazzy/share/geometry_msgs/cmake
 
 //The directory containing a CMake configuration file for graph_msgs.
 graph_msgs_DIR:PATH=/opt/ros/jazzy/share/graph_msgs/cmake
+
+//The directory containing a CMake configuration file for hpp-fcl.
+hpp-fcl_DIR:PATH=/opt/ros/jazzy/lib/x86_64-linux-gnu/cmake/hpp-fcl
 
 //The directory containing a CMake configuration file for image_transport.
 image_transport_DIR:PATH=/opt/ros/jazzy/share/image_transport/cmake
@@ -1104,6 +1143,9 @@ osqp_DIR:PATH=/opt/ros/jazzy/lib/cmake/osqp
 
 //The directory containing a CMake configuration file for parameter_traits.
 parameter_traits_DIR:PATH=/opt/ros/jazzy/share/parameter_traits/cmake
+
+//The directory containing a CMake configuration file for pinocchio.
+pinocchio_DIR:PATH=/opt/ros/jazzy/lib/x86_64-linux-gnu/cmake/pinocchio
 
 //Path to a library.
 pkgcfg_lib_PKG_FONTCONFIG_fontconfig:FILEPATH=/usr/lib/x86_64-linux-gnu/libfontconfig.so
@@ -1315,9 +1357,6 @@ tracetools_DIR:PATH=/opt/ros/jazzy/share/tracetools/cmake
 //The directory containing a CMake configuration file for trajectory_msgs.
 trajectory_msgs_DIR:PATH=/opt/ros/jazzy/share/trajectory_msgs/cmake
 
-//Dependencies for the target
-trajectory_utils_LIB_DEPENDS:STATIC=general;rclcpp::rclcpp;general;moveit_msgs::moveit_msgs__rosidl_generator_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_fastrtps_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_introspection_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_fastrtps_cpp;general;moveit_msgs::moveit_msgs__rosidl_typesupport_introspection_cpp;general;moveit_msgs::moveit_msgs__rosidl_typesupport_cpp;general;moveit_msgs::moveit_msgs__rosidl_generator_py;general;trajectory_msgs::trajectory_msgs__rosidl_generator_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_fastrtps_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_fastrtps_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_introspection_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_introspection_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_generator_py;general;moveit_ros_planning_interface::moveit_common_planning_interface_objects;general;moveit_ros_planning_interface::moveit_planning_scene_interface;general;moveit_ros_planning_interface::moveit_move_group_interface;general;graph_msgs::graph_msgs__rosidl_generator_c;general;graph_msgs::graph_msgs__rosidl_typesupport_fastrtps_c;general;graph_msgs::graph_msgs__rosidl_typesupport_introspection_c;general;graph_msgs::graph_msgs__rosidl_typesupport_c;general;graph_msgs::graph_msgs__rosidl_typesupport_fastrtps_cpp;general;graph_msgs::graph_msgs__rosidl_typesupport_introspection_cpp;general;graph_msgs::graph_msgs__rosidl_typesupport_cpp;general;graph_msgs::graph_msgs__rosidl_generator_py;general;moveit_core::moveit_collision_detection;general;moveit_core::moveit_collision_detection_bullet;general;moveit_core::moveit_collision_detection_fcl;general;moveit_core::moveit_collision_distance_field;general;moveit_core::moveit_constraint_samplers;general;moveit_core::moveit_distance_field;general;moveit_core::moveit_dynamics_solver;general;moveit_core::moveit_exceptions;general;moveit_core::moveit_kinematic_constraints;general;moveit_core::moveit_kinematics_base;general;moveit_core::moveit_kinematics_metrics;general;moveit_core::moveit_planning_interface;general;moveit_core::moveit_planning_scene;general;moveit_core::moveit_robot_model;general;moveit_core::moveit_robot_state;general;moveit_core::moveit_robot_trajectory;general;moveit_core::moveit_smoothing_base;general;moveit_core::moveit_test_utils;general;moveit_core::moveit_trajectory_processing;general;moveit_core::moveit_transforms;general;moveit_core::moveit_utils;
-
 //The directory containing a CMake configuration file for type_description_interfaces.
 type_description_interfaces_DIR:PATH=/opt/ros/jazzy/share/type_description_interfaces/cmake
 
@@ -1338,6 +1377,9 @@ urdfdom_headers_DIR:PATH=/opt/ros/jazzy/lib/x86_64-linux-gnu/urdfdom_headers/cma
 
 //Dependencies for the target
 usb_data_LIB_DEPENDS:STATIC=general;rclcpp::rclcpp;general;moveit_msgs::moveit_msgs__rosidl_generator_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_fastrtps_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_introspection_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_fastrtps_cpp;general;moveit_msgs::moveit_msgs__rosidl_typesupport_introspection_cpp;general;moveit_msgs::moveit_msgs__rosidl_typesupport_cpp;general;moveit_msgs::moveit_msgs__rosidl_generator_py;general;trajectory_msgs::trajectory_msgs__rosidl_generator_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_fastrtps_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_fastrtps_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_introspection_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_introspection_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_generator_py;general;serial::serial;
+
+//Dependencies for the target
+utils_LIB_DEPENDS:STATIC=general;rclcpp::rclcpp;general;moveit_msgs::moveit_msgs__rosidl_generator_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_fastrtps_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_introspection_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_c;general;moveit_msgs::moveit_msgs__rosidl_typesupport_fastrtps_cpp;general;moveit_msgs::moveit_msgs__rosidl_typesupport_introspection_cpp;general;moveit_msgs::moveit_msgs__rosidl_typesupport_cpp;general;moveit_msgs::moveit_msgs__rosidl_generator_py;general;trajectory_msgs::trajectory_msgs__rosidl_generator_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_fastrtps_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_fastrtps_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_introspection_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_c;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_introspection_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_typesupport_cpp;general;trajectory_msgs::trajectory_msgs__rosidl_generator_py;general;moveit_ros_planning_interface::moveit_common_planning_interface_objects;general;moveit_ros_planning_interface::moveit_planning_scene_interface;general;moveit_ros_planning_interface::moveit_move_group_interface;general;graph_msgs::graph_msgs__rosidl_generator_c;general;graph_msgs::graph_msgs__rosidl_typesupport_fastrtps_c;general;graph_msgs::graph_msgs__rosidl_typesupport_introspection_c;general;graph_msgs::graph_msgs__rosidl_typesupport_c;general;graph_msgs::graph_msgs__rosidl_typesupport_fastrtps_cpp;general;graph_msgs::graph_msgs__rosidl_typesupport_introspection_cpp;general;graph_msgs::graph_msgs__rosidl_typesupport_cpp;general;graph_msgs::graph_msgs__rosidl_generator_py;general;moveit_core::moveit_collision_detection;general;moveit_core::moveit_collision_detection_bullet;general;moveit_core::moveit_collision_detection_fcl;general;moveit_core::moveit_collision_distance_field;general;moveit_core::moveit_constraint_samplers;general;moveit_core::moveit_distance_field;general;moveit_core::moveit_dynamics_solver;general;moveit_core::moveit_exceptions;general;moveit_core::moveit_kinematic_constraints;general;moveit_core::moveit_kinematics_base;general;moveit_core::moveit_kinematics_metrics;general;moveit_core::moveit_planning_interface;general;moveit_core::moveit_planning_scene;general;moveit_core::moveit_robot_model;general;moveit_core::moveit_robot_state;general;moveit_core::moveit_robot_trajectory;general;moveit_core::moveit_smoothing_base;general;moveit_core::moveit_test_utils;general;moveit_core::moveit_trajectory_processing;general;moveit_core::moveit_transforms;general;moveit_core::moveit_utils;
 
 //The directory containing a CMake configuration file for visualization_msgs.
 visualization_msgs_DIR:PATH=/opt/ros/jazzy/share/visualization_msgs/cmake
@@ -1384,8 +1426,34 @@ BULLET_MATH_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
 BULLET_SOFTBODY_LIBRARY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: BULLET_SOFTBODY_LIBRARY_DEBUG
 BULLET_SOFTBODY_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Boost_CHRONO_LIBRARY_DEBUG
+Boost_CHRONO_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Boost_CHRONO_LIBRARY_RELEASE
+Boost_CHRONO_LIBRARY_RELEASE-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: Boost_DIR
 Boost_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Boost_FILESYSTEM_LIBRARY_DEBUG
+Boost_FILESYSTEM_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Boost_FILESYSTEM_LIBRARY_RELEASE
+Boost_FILESYSTEM_LIBRARY_RELEASE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Boost_INCLUDE_DIR
+Boost_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Boost_LIBRARY_DIR_DEBUG
+Boost_LIBRARY_DIR_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Boost_LIBRARY_DIR_RELEASE
+Boost_LIBRARY_DIR_RELEASE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Boost_PYTHON312_LIBRARY_DEBUG
+Boost_PYTHON312_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Boost_PYTHON312_LIBRARY_RELEASE
+Boost_PYTHON312_LIBRARY_RELEASE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Boost_SERIALIZATION_LIBRARY_DEBUG
+Boost_SERIALIZATION_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Boost_SERIALIZATION_LIBRARY_RELEASE
+Boost_SERIALIZATION_LIBRARY_RELEASE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Boost_SYSTEM_LIBRARY_DEBUG
+Boost_SYSTEM_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Boost_SYSTEM_LIBRARY_RELEASE
+Boost_SYSTEM_LIBRARY_RELEASE-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_ADDR2LINE
 CMAKE_ADDR2LINE-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_AR
@@ -1544,7 +1612,7 @@ CMAKE_UNAME:INTERNAL=/usr/bin/uname
 //ADVANCED property for variable: CMAKE_VERBOSE_MAKEFILE
 CMAKE_VERBOSE_MAKEFILE-ADVANCED:INTERNAL=1
 //Details about finding Boost
-FIND_PACKAGE_MESSAGE_DETAILS_Boost:INTERNAL=[/usr/lib/x86_64-linux-gnu/cmake/Boost-1.83.0/BoostConfig.cmake][cfound components: system filesystem date_time program_options thread ][v1.83.0()]
+FIND_PACKAGE_MESSAGE_DETAILS_Boost:INTERNAL=[/usr/include][cfound components: chrono serialization filesystem ][v1.83.0()]
 //Details about finding Eigen3
 FIND_PACKAGE_MESSAGE_DETAILS_Eigen3:INTERNAL=[1][v3.4.0()]
 //Details about finding FastRTPS
@@ -1554,7 +1622,7 @@ FIND_PACKAGE_MESSAGE_DETAILS_OpenGL:INTERNAL=[/usr/lib/x86_64-linux-gnu/libOpenG
 //Details about finding OpenSSL
 FIND_PACKAGE_MESSAGE_DETAILS_OpenSSL:INTERNAL=[/usr/lib/x86_64-linux-gnu/libcrypto.so][/usr/include][c ][v3.0.13()]
 //Details about finding Python3
-FIND_PACKAGE_MESSAGE_DETAILS_Python3:INTERNAL=[/usr/bin/python3][cfound components: Interpreter ][v3.12.3()]
+FIND_PACKAGE_MESSAGE_DETAILS_Python3:INTERNAL=[/usr/bin/python3][/usr/include/python3.12][/usr/lib/python3/dist-packages/numpy/core/include][cfound components: Interpreter Development.Module NumPy ][v3.12.3()]
 //Details about finding X11
 FIND_PACKAGE_MESSAGE_DETAILS_X11:INTERNAL=[/usr/include][/usr/lib/x86_64-linux-gnu/libX11.so][c ][v()]
 //Details about finding ZLIB
@@ -1914,8 +1982,23 @@ ZLIB_INCLUDE_DIR-ADVANCED:INTERNAL=1
 ZLIB_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: ZLIB_LIBRARY_RELEASE
 ZLIB_LIBRARY_RELEASE-ADVANCED:INTERNAL=1
+//Components requested for this build tree.
+_Boost_COMPONENTS_SEARCHED:INTERNAL=chrono;filesystem;python312;serialization;system
+//Last used Boost_INCLUDE_DIR value.
+_Boost_INCLUDE_DIR_LAST:INTERNAL=/usr/include
+//Last used Boost_LIBRARY_DIR_DEBUG value.
+_Boost_LIBRARY_DIR_DEBUG_LAST:INTERNAL=/usr/lib/x86_64-linux-gnu
+//Last used Boost_LIBRARY_DIR_RELEASE value.
+_Boost_LIBRARY_DIR_RELEASE_LAST:INTERNAL=/usr/lib/x86_64-linux-gnu
+//Last used Boost_NAMESPACE value.
+_Boost_NAMESPACE_LAST:INTERNAL=boost
+//Last used Boost_USE_MULTITHREADED value.
+_Boost_USE_MULTITHREADED_LAST:INTERNAL=ON
+//Last used Boost_USE_STATIC_LIBS value.
+_Boost_USE_STATIC_LIBS_LAST:INTERNAL=OFF
 //linker supports push/pop state
 _CMAKE_LINKER_PUSHPOP_STATE_SUPPORTED:INTERNAL=TRUE
+_MINIMAL_CXX_STANDARD:INTERNAL=14
 _OPENSSL_CFLAGS:INTERNAL=-I/usr/include
 _OPENSSL_CFLAGS_I:INTERNAL=
 _OPENSSL_CFLAGS_OTHER:INTERNAL=
@@ -1953,19 +2036,29 @@ _OPENSSL_openssl_PREFIX:INTERNAL=
 _OPENSSL_openssl_VERSION:INTERNAL=
 //Compiler reason failure
 _Python3_Compiler_REASON_FAILURE:INTERNAL=
+_Python3_DEVELOPMENT_MODULE_SIGNATURE:INTERNAL=95a6b3a905b31a053078ff046e537c6d
 //Development reason failure
 _Python3_Development_REASON_FAILURE:INTERNAL=
-//Path to a program.
 _Python3_EXECUTABLE:INTERNAL=/usr/bin/python3
+_Python3_INCLUDE_DIR:INTERNAL=/usr/include/python3.12
 //Python3 Properties
-_Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;12;3;64;32;;cpython-312-x86_64-linux-gnu;abi3;/usr/lib/python3.12;/usr/lib/python3.12;/usr/local/lib/python3.12/dist-packages;/usr/local/lib/python3.12/dist-packages
+_Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;12;3;64;;cpython-312-x86_64-linux-gnu;abi3;/usr/lib/python3.12;/usr/lib/python3.12;/usr/local/lib/python3.12/dist-packages;/usr/local/lib/python3.12/dist-packages
 _Python3_INTERPRETER_SIGNATURE:INTERNAL=4c8bfa8951e99fa32e4000a94f8c04a2
-//NumPy reason failure
-_Python3_NumPy_REASON_FAILURE:INTERNAL=
+//Interpreter reason failure
+_Python3_Interpreter_REASON_FAILURE:INTERNAL=
+_Python3_NUMPY_SIGNATURE:INTERNAL=d5ddeb909deee809c18fdfbea68bafbe
+//Path to a file.
+_Python3_NumPy_INCLUDE_DIR:INTERNAL=/usr/lib/python3/dist-packages/numpy/core/include
+//Index for unique symlink install targets
+__AMENT_CMAKE_SYMLINK_INSTALL_TARGETS_INDEX:INTERNAL=1
 __pkg_config_arguments_PKG_FONTCONFIG:INTERNAL=QUIET;fontconfig
 __pkg_config_arguments__OPENSSL:INTERNAL=QUIET;openssl
 __pkg_config_checked_PKG_FONTCONFIG:INTERNAL=1
 __pkg_config_checked__OPENSSL:INTERNAL=1
+//Result of TRY_COMPILE
+_cxx_standard_build_status:INTERNAL=TRUE
+//Result of try_run()
+_cxx_standard_run_status:INTERNAL=0
 //ADVANCED property for variable: boost_atomic_DIR
 boost_atomic_DIR-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: boost_chrono_DIR

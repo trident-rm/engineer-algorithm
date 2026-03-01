@@ -8,11 +8,23 @@ int main(int argc, char** argv) {
     std::thread([serial_node]() {
         serial_node->receive_data();
     }).detach();
+
+    rclcpp::Rate rate(50.0);
     
-    rclcpp::Rate rate(1.0);
+    size_t counter = 0;
+    
     while (rclcpp::ok()) {
-        serial_node->print_joint_angles();
-        serial_node->send_joint_angles(serial_node->get_joint_angles().data(),0);
+        if (counter % 50 == 0) {
+            serial_node->print_joint_angles();
+        }
+        
+        // 使用实际接收到的 robo_arm 数据发送
+        serial_node->send_roboarm_with_controller(
+            serial_node->get_joint_currents(), 
+            serial_node->get_robo_arm_angles()
+        );
+        
+        counter++;
         rate.sleep();
     }
     rclcpp::shutdown();

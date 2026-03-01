@@ -48,50 +48,88 @@ const uint16_t wCRC_table[256] =
 
 
 SerialRxNode::SerialRxNode() : Node("simple_robot_receiver"){
+    // 声明和获取串口参数
+    this->declare_parameter<std::string>("serial_port", "/dev/ttyUSB0");
+    this->declare_parameter<int>("baudrate", 115200);
+    
+    std::string port = this->get_parameter("serial_port").as_string();
+    int baudrate = this->get_parameter("baudrate").as_int();
+    
+    RCLCPP_INFO(this->get_logger(), "Attempting to open serial port: %s at %d baud", port.c_str(), baudrate);
+    
     try {
-        serial_.setPort("/dev/ttyUSB0");  // 串口号
-        serial_.setBaudrate(115200);
+        serial_.setPort(port);
+        serial_.setBaudrate(baudrate);
+        serial_.setTimeout(1000, 1000, 0, 1000, 0);  // inter_byte, read_constant, read_multiplier, write_constant, write_multiplier (all in ms)
         serial_.open();
-        RCLCPP_INFO(this->get_logger(), "serial open success");
+        RCLCPP_INFO(this->get_logger(), "Serial port opened successfully: %s", port.c_str());
     } catch (const std::exception& e) {
-        RCLCPP_ERROR(this->get_logger(), "serial open failed: %s", e.what());
+        RCLCPP_ERROR(this->get_logger(), "Serial port open failed: %s", e.what());
+        RCLCPP_WARN(this->get_logger(), "The node will continue running but serial communication will not work.");
+        RCLCPP_WARN(this->get_logger(), "To fix: make sure the device is connected and try setting serial_port parameter.");
     }
     
+    // 为 robot_state_publisher 发布标准 /joint_states 话题
     joint_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(
-        "/usb_joint_states", 10);
-}
-
-void SerialRxNode::send_joint_angles(const float joint_angles[6], uint8_t control_mode){
-    nuc_rx_t tx_data;
-    tx_data.SOF = EXPECTED_SOF;
-    tx_data.control_mode = control_mode;
-    for(int i = 0; i < 6; ++i){
-        tx_data.joint_theta[i] = joint_angles[i];
-    }
-
-    // 计算CRC16校验：对所有字节（除了CheckSum）计算CRC16
-    uint8_t* data_ptr = reinterpret_cast<uint8_t*>(&tx_data);
-    uint32_t data_length = static_cast<uint32_t>(sizeof(nuc_rx_t) - sizeof(uint16_t));  // 排除CheckSum字段
-    tx_data.CheckSum = this->get_CRC16_check_sum(data_ptr, data_length, CRC16_INIT);
-
-    try {
-        serial_.write(data_ptr, sizeof(nuc_rx_t));
-        RCLCPP_INFO(this->get_logger(), "Sent joint angles to serial port");
-    } catch (const std::exception& e) {
-        RCLCPP_ERROR(this->get_logger(), "Failed to send joint angles: %s", e.what());
-    }
-}
-
-void SerialRxNode::send_joint_angles(const std::vector<float>& joint_angles, uint8_t control_mode){
-    if(joint_angles.size() != 6){
-        RCLCPP_ERROR(this->get_logger(), "Joint angles vector must have 6 elements");
-        return;
-    }
-    send_joint_angles(joint_angles.data(), control_mode);
+        "/joint_states", 10);
+    // 为其他节点发布详细的机械臂和控制器状态
+    robo_arm_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(
+        "/robo_arm_joint_states", 10);
+    controller_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(
+        "/controller_joint_states", 10);
 }
 
 std::vector<float> SerialRxNode::get_joint_angles() const {
     return joint_angle_;
+}
+
+std::vector<float> SerialRxNode::get_robo_arm_angles() const {
+    return robo_arm_angle_;
+}
+
+std::vector<float> SerialRxNode::get_joint_currents() const {
+    return joint_current_;
+}
+
+std::vector<float> SerialRxNode::get_controller_angles() const {
+    return controller_angle_;
+}
+
+uint8_t SerialRxNode::get_control_mode() const {
+    return control_mode_;
+}
+
+void SerialRxNode::send_roboarm_with_controller(const std::vector<float>& currents, const std::vector<float>& robo_arm_angles){
+    if (currents.size() != 6 || robo_arm_angles.size() != 6) {
+        RCLCPP_ERROR(this->get_logger(), "currents and robo_arm_angles vectors must each have 6 elements");
+        return;
+    }
+
+    roboarm_with_controller_tx_t data;
+    data.SOF = EXPECTED_SOF;
+    
+    // 将 float 角度转换为 int16_t：角度（弧度）* 10000
+    // 对于 joint4 和 joint5 (索引3和4)，需要乘以10000后-29000
+    for (int i = 0; i < 6; ++i) {
+        if (i == 3 || i == 4) {
+            data.robo_arm_joint_theta[i] = static_cast<int16_t>(robo_arm_angles[i] * 10000.0f - 29000.0f);
+        } else {
+            data.robo_arm_joint_theta[i] = static_cast<int16_t>(robo_arm_angles[i] * 10000.0f);
+        }
+        data.current[i] = currents[i];
+    }
+
+    // 计算CRC16校验
+    uint8_t* data_ptr = reinterpret_cast<uint8_t*>(&data);
+    uint32_t data_length = static_cast<uint32_t>(sizeof(roboarm_with_controller_tx_t) - sizeof(uint16_t));
+    data.CheckSum = this->get_CRC16_check_sum(data_ptr, data_length, CRC16_INIT);
+
+    try {
+        serial_.write(data_ptr, sizeof(roboarm_with_controller_tx_t));
+        RCLCPP_DEBUG(this->get_logger(), "Sent roboarm angles (angle*10000 as uint16_t) and currents to serial port");
+    } catch (const std::exception& e) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to send roboarm packet: %s", e.what());
+    }
 }
 
 #include <chrono>
@@ -176,10 +214,17 @@ void SerialRxNode::receive_data(){
 }
 
 void SerialRxNode::print_joint_angles() const {
-    RCLCPP_INFO(this->get_logger(), "Joint Angles:");
-    for (size_t i = 0; i < joint_angle_.size(); ++i) {
-        RCLCPP_INFO(this->get_logger(), "joint[%zu]: %f", i + 1, joint_angle_[i]);
+    RCLCPP_INFO(this->get_logger(), "========== Joint Angles ==========");
+    RCLCPP_INFO(this->get_logger(), "Robo Arm Angles:");
+    for (size_t i = 0; i < robo_arm_angle_.size(); ++i) {
+        RCLCPP_INFO(this->get_logger(), "  joint[%zu]: %.4f rad", i + 1, robo_arm_angle_[i]);
     }
+    RCLCPP_INFO(this->get_logger(), "Controller Angles:");
+    for (size_t i = 0; i < controller_angle_.size(); ++i) {
+        RCLCPP_INFO(this->get_logger(), "  joint[%zu]: %.4f rad", i + 1, controller_angle_[i]);
+    }
+    RCLCPP_INFO(this->get_logger(), "Control Mode: %d", control_mode_);
+    RCLCPP_INFO(this->get_logger(), "==================================");
 }
 
 rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr SerialRxNode::get_publisher() const {
@@ -188,7 +233,8 @@ rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr SerialRxNode::get_pub
 
 void SerialRxNode::process_buffer(){
     RCLCPP_DEBUG(this->get_logger(), "Processing serial buffer (size=%zu)", buffer_.size());
-    const size_t packet_size = sizeof(nuc_rx_t);
+    const size_t packet_size = sizeof(roboarm_with_controller_rx_t);
+    
     while(buffer_.size() >= packet_size){
         size_t sof_index = 0;
         for (; sof_index < buffer_.size(); ++sof_index){
@@ -208,7 +254,7 @@ void SerialRxNode::process_buffer(){
         }
         std::vector<uint8_t> packet(buffer_.begin(), buffer_.begin() + packet_size);
 
-    if(this->verify_CRC16_check_sum(const_cast<uint8_t*>(packet.data()), static_cast<uint32_t>(packet.size()))){
+        if(this->verify_CRC16_check_sum(const_cast<uint8_t*>(packet.data()), static_cast<uint32_t>(packet.size()))){
             RCLCPP_DEBUG(this->get_logger(), "parse serial data");
             parse_buffer(packet);
             publish_joint_states(packet);
@@ -243,24 +289,71 @@ uint32_t SerialRxNode::verify_CRC16_check_sum(uint8_t *pchMessage, uint32_t dwLe
 }
 
 void SerialRxNode::parse_buffer(const std::vector<uint8_t>& packet){
-    nuc_rx_t rx_data;
-    // copy into local struct to avoid alignment/aliasing issues
-    std::memcpy(&rx_data, packet.data(), std::min(packet.size(), sizeof(nuc_rx_t)));
-    for(int i = 0; i < 6; ++i){
-        joint_angle_[i] = rx_data.joint_theta[i];
+    if (packet.size() == sizeof(roboarm_with_controller_rx_t)) {
+        roboarm_with_controller_rx_t rx_data;
+        std::memcpy(&rx_data, packet.data(), sizeof(roboarm_with_controller_rx_t));
+        
+        control_mode_ = rx_data.control_mode;
+        
+        // 接收的角度除以10000，对于joint4和joint5(索引3和4)，除以10000后加上2.9
+        for(int i = 0; i < 6; ++i){
+            if (i == 3 || i == 4) {
+                // joint4 和 joint5: (接收值 / 10000) + 2.9
+                robo_arm_angle_[i] = static_cast<float>(rx_data.robo_arm_joint_theta[i]) / 10000.0f + 2.9f;
+                controller_angle_[i] = static_cast<float>(rx_data.controller_joint_theta[i]) / 10000.0f + 2.9f;
+            } else {
+                // 其他关节: 接收值 / 10000
+                robo_arm_angle_[i] = static_cast<float>(rx_data.robo_arm_joint_theta[i]) / 10000.0f;
+                controller_angle_[i] = static_cast<float>(rx_data.controller_joint_theta[i]) / 10000.0f;
+            }
+        }
+        
+        RCLCPP_DEBUG(this->get_logger(), "Parsed roboarm_with_controller: mode=%d, robo[0]=%.4f, ctrl[0]=%.4f",
+                    control_mode_, robo_arm_angle_[0], controller_angle_[0]);
+        return;
     }
+    
+    // 如果不是 roboarm_with_controller 格式，记录警告
+    RCLCPP_WARN(this->get_logger(), "Unknown packet format, size=%zu (expected %zu)", 
+                packet.size(), sizeof(roboarm_with_controller_rx_t));
 }
 
-void SerialRxNode::publish_joint_states(const std::vector<uint8_t>& /*packet*/){
-    auto message = sensor_msgs::msg::JointState();
-    message.header.stamp = this->now();
-    message.name = {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"};
-
-    // Convert joint_angle_ to std::vector<double>
-    std::vector<double> joint_angle_double(joint_angle_.begin(), joint_angle_.end());
-    message.position = joint_angle_double;
-
-    joint_pub_->publish(message);
+void SerialRxNode::publish_joint_states(const std::vector<uint8_t>& packet){
+    // 只处理 roboarm_with_controller 格式
+    if (packet.size() == sizeof(roboarm_with_controller_rx_t)) {
+        auto timestamp = this->now();
+        
+        // 应用滤波和坐标转换（与 real_world_new.cpp 中一致）
+        std::vector<double> filtered_angles = robo_filter_.filter(robo_arm_angle_);
+        filtered_angles[1] = -filtered_angles[1];
+        filtered_angles[4] = 6.28 - filtered_angles[4];
+        
+        // 发布标准 /joint_states (供 robot_state_publisher 使用，发布 TF)
+        auto joint_msg = sensor_msgs::msg::JointState();
+        joint_msg.header.stamp = timestamp;
+        joint_msg.name = {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"};
+        joint_msg.position = filtered_angles;
+        joint_pub_->publish(joint_msg);
+        
+        // 发布 robo_arm_joint_states (详细状态)
+        auto robo_msg = sensor_msgs::msg::JointState();
+        robo_msg.header.stamp = timestamp;
+        robo_msg.name = {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"};
+        robo_msg.position = filtered_angles;
+        robo_arm_pub_->publish(robo_msg);
+        
+        // 发布 controller_joint_states
+        auto ctrl_msg = sensor_msgs::msg::JointState();
+        ctrl_msg.header.stamp = timestamp;
+        ctrl_msg.name = {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"};
+        std::vector<double> ctrl_angle_double(controller_angle_.begin(), controller_angle_.end());
+        ctrl_msg.position = ctrl_angle_double;
+        controller_pub_->publish(ctrl_msg);
+        
+        RCLCPP_DEBUG(this->get_logger(), "Published joint_states, robo_arm and controller states, mode=%d", control_mode_);
+    } else {
+        RCLCPP_WARN(this->get_logger(), "Unknown packet size for publishing: %zu", packet.size());
+    }
 }
 
 uint16_t SerialRxNode::get_CRC16_check_sum(uint8_t *pch_message,uint32_t dw_length,uint16_t wCRC)
@@ -277,4 +370,3 @@ uint16_t SerialRxNode::get_CRC16_check_sum(uint8_t *pch_message,uint32_t dw_leng
     }
     return wCRC;
 }
-

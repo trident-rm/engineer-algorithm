@@ -1,1 +1,0 @@
-/home/hku/robo_arm/install/robo_arm_description/share/robo_arm_description/package.dsv

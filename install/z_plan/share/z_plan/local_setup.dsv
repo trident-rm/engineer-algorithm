@@ -1,2 +1,1 @@
-source;share/z_plan/environment/ament_prefix_path.sh
-source;share/z_plan/environment/path.sh
+/home/hku/robo_arm/build/z_plan/ament_cmake_environment_hooks/local_setup.dsv

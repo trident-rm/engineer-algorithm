@@ -12,14 +12,9 @@ def generate_launch_description():
         executable='real_world',
         name='real_world_node',
         output='screen',
-        remappings=[
-            ('/usb_joint_states', '/joint_states'),
-        ],
         parameters=[
-            moveit_config.robot_description,
-            moveit_config.robot_description_semantic,
-            moveit_config.robot_description_kinematics,
-            moveit_config.planning_pipelines,
+            moveit_config.to_dict(),
+            {'use_sim_time': False}
         ],
     )
 
@@ -28,7 +23,10 @@ def generate_launch_description():
         executable='move_group',
         name='move_group',
         output='screen',
-        parameters=[moveit_config.to_dict()],
+        parameters=[
+            moveit_config.to_dict(),
+            {'use_sim_time': False}
+        ],
     )
     # Robot State Publisher (publish TF from robot_description)
     robot_state_publisher = Node(

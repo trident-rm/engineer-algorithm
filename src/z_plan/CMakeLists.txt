@@ -20,13 +20,14 @@ find_package(serial REQUIRED)
 find_package(graph_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(tf2_eigen REQUIRED)
+find_package(pinocchio REQUIRED)
 
 # Include directories
 include_directories(include)
 
 # 添加工具库
-add_library(trajectory_utils src/trajectory_utils.cpp)
-ament_target_dependencies(trajectory_utils
+add_library(utils src/utils.cpp)
+ament_target_dependencies(utils
   rclcpp
   moveit_msgs
   trajectory_msgs
@@ -34,6 +35,7 @@ ament_target_dependencies(trajectory_utils
   graph_msgs
   moveit_core
 )
+target_link_libraries(utils pinocchio::pinocchio)
 
 add_library(usb_data src/usb_data.cpp)
 ament_target_dependencies(usb_data
@@ -58,7 +60,7 @@ target_link_libraries(z_plan_node Eigen3::Eigen)
 
 # Add executable for MoveGroupInterface version
 add_executable(z_plan_movegroup src/z_plan_movegroup.cpp)
-target_link_libraries(z_plan_movegroup trajectory_utils)
+target_link_libraries(z_plan_movegroup utils)
 ament_target_dependencies(z_plan_movegroup
   rclcpp
   geometry_msgs
@@ -70,7 +72,7 @@ ament_target_dependencies(z_plan_movegroup
 
 # Add executable for MoveGroupInterface version with robo_arm3
 add_executable(z_plan_movegroup_robo_arm src/z_plan_movegroup_robo_arm.cpp)
-target_link_libraries(z_plan_movegroup_robo_arm trajectory_utils)
+target_link_libraries(z_plan_movegroup_robo_arm utils)
 ament_target_dependencies(z_plan_movegroup_robo_arm
   rclcpp
   geometry_msgs
@@ -82,7 +84,7 @@ ament_target_dependencies(z_plan_movegroup_robo_arm
 
 # Add executable for real world situation
 add_executable(real_world src/real_world.cpp)
-target_link_libraries(real_world trajectory_utils usb_data)
+target_link_libraries(real_world utils usb_data pinocchio::pinocchio)
 ament_target_dependencies(real_world
   rclcpp
   geometry_msgs
@@ -92,6 +94,21 @@ ament_target_dependencies(real_world
   trajectory_msgs
   serial
   tf2_eigen
+)
+
+# Add executable for real world new (controller-based control)
+add_executable(real_world_new src/real_world_new.cpp)
+target_link_libraries(real_world_new utils usb_data pinocchio::pinocchio)
+ament_target_dependencies(real_world_new
+  rclcpp
+  geometry_msgs
+  moveit_ros_planning_interface
+  moveit_visual_tools
+  moveit_msgs
+  trajectory_msgs
+  serial
+  tf2_eigen
+  moveit_core
 )
 
 add_executable(read_data src/read_data_test.cpp src/usb_data.cpp)
@@ -108,6 +125,7 @@ install(TARGETS
   z_plan_movegroup
   z_plan_movegroup_robo_arm
   real_world
+  real_world_new
   read_data
   DESTINATION lib/${PROJECT_NAME}
 )

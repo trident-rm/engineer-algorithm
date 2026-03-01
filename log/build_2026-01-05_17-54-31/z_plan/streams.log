@@ -1,6 +1,0 @@
-[0.015s] Invoking command in '/home/hku/robo_arm/build/z_plan': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/hku/ws_moveit/install/moveit_configs_utils:/home/hku/ws_moveit2/install/moveit_configs_utils:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/hku/robo_arm/build/z_plan -- -j16 -l16
-[0.112s] [ 50%] Building CXX object CMakeFiles/z_plan_node.dir/src/z_plan_node.cpp.o
-[5.724s] gmake[2]: *** [CMakeFiles/z_plan_node.dir/build.make:76: CMakeFiles/z_plan_node.dir/src/z_plan_node.cpp.o] Interrupt
-[5.725s] gmake[1]: *** [CMakeFiles/Makefile2:137: CMakeFiles/z_plan_node.dir/all] Interrupt
-[5.725s] gmake: *** [Makefile:146: all] Interrupt
-[5.780s] Invoked command in '/home/hku/robo_arm/build/z_plan' returned '-2': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/hku/ws_moveit/install/moveit_configs_utils:/home/hku/ws_moveit2/install/moveit_configs_utils:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/hku/robo_arm/build/z_plan -- -j16 -l16
