@@ -8,6 +8,7 @@
 #include <vector>
 #include <string>
 #include <moveit/robot_model/robot_model.hpp>
+#include <moveit/robot_state/robot_state.hpp>
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <functional>
 #include <Eigen/Dense>
@@ -112,10 +113,12 @@ Eigen::Vector3d compute_e_hat_direction(const std::vector<std::vector<double>>& 
  * @param  joint_model_group    关节模型组
  * @param  end_effector_link    末端执行器连杆名称
  * @param  joint_names          关节名称列表
- * @param  dt                   控制周期 (s)，默认 0.05
+ * @param  dt                   控制增益（等效时间步长），默认 0.05
+ * @param  arm_state            可选：外部已 update() 的机械臂 RobotState；非 nullptr 时跳过内部 FK 重建，
+ *                              节省约 2/3 的重复 FK 开销（每周期在 control_callback 统一更新一次）
  * @retval std::vector<double>  约束后一步目标关节角度（死区时返回当前角度，失败时返回空）
  */
-std::vector<double> e_hat_direction_constraint(
+std::vector<double> direction_constraint(
     const std::vector<double>& robo_arm_angles,
     const std::vector<double>& controller_angles,
     const Eigen::Vector3d& reference_position,
@@ -124,6 +127,7 @@ std::vector<double> e_hat_direction_constraint(
     const moveit::core::JointModelGroup* joint_model_group,
     const std::string& end_effector_link,
     const std::vector<std::string>& joint_names,
-    double dt = 0.05);
+    double dt = 0.05,
+    moveit::core::RobotState* arm_state = nullptr);
 
 #endif

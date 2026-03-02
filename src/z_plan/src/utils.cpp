@@ -2,6 +2,7 @@
 #include "utils.hpp"
 #include <iostream>
 #include <iomanip>
+#include <memory>
 #include <moveit/robot_state/robot_state.hpp>
 #include <Eigen/Dense>
 #include <Eigen/SVD>
@@ -340,7 +341,7 @@ geometry_msgs::msg::Pose compute_target_pose_along_direction(
  * @brief  对控制器末端位置施加 e_hat 方向约束，用雅可比伪逆（自适应阻尼最小二乘）求一步关节增量
  * @note   算法与 test_constraint.cpp::constrained_step() 一致
  */
-std::vector<double> e_hat_direction_constraint(
+std::vector<double> direction_constraint(
     const std::vector<double>& robo_arm_angles,
     const std::vector<double>& controller_angles,
     const Eigen::Vector3d& reference_position,
@@ -349,7 +350,8 @@ std::vector<double> e_hat_direction_constraint(
     const moveit::core::JointModelGroup* joint_model_group,
     const std::string& end_effector_link,
     const std::vector<std::string>& joint_names,
-    double dt)
+    double dt,
+    moveit::core::RobotState* arm_state)
 {
     // ── Step 1: FK(controller) → controller_ee ────────────────────────────────
     moveit::core::RobotState controller_state(robot_model);
@@ -359,13 +361,18 @@ std::vector<double> e_hat_direction_constraint(
     Eigen::Vector3d controller_ee =
         controller_state.getGlobalLinkTransform(end_effector_link).translation();
 
-    // ── Step 2: FK(robo_arm) → current_ee + 雅可比 ────────────────────────────
-    moveit::core::RobotState robot_state(robot_model);
-    for (size_t i = 0; i < joint_names.size(); ++i)
-        robot_state.setJointPositions(joint_names[i], &robo_arm_angles[i]);
-    robot_state.update();
+    // ── Step 2: FK(robo_arm) → current_ee ────────────────────────────────────
+    // 若外部传入已 update() 的 arm_state 则直接复用（每周期节省 1 次完整 FK）
+    std::unique_ptr<moveit::core::RobotState> local_state;
+    if (!arm_state) {
+        local_state = std::make_unique<moveit::core::RobotState>(robot_model);
+        for (size_t i = 0; i < joint_names.size(); ++i)
+            local_state->setJointPositions(joint_names[i], &robo_arm_angles[i]);
+        local_state->update();
+        arm_state = local_state.get();
+    }
     Eigen::Vector3d current_ee =
-        robot_state.getGlobalLinkTransform(end_effector_link).translation();
+        arm_state->getGlobalLinkTransform(end_effector_link).translation();
 
     // ── Step 3: 投影到 e_hat 垂直平面，得到约束目标 ───────────────────────────
     Eigen::Vector3d e_hat = e_hat_in.normalized();
@@ -384,7 +391,7 @@ std::vector<double> e_hat_direction_constraint(
         return robo_arm_angles;  // 已到目标，维持当前角度
     }
 
-    // ── Step 6: 限速（max 0.15 m/s，乘以 dt 得最大位移）──────────────────────
+    // ── Step 6: 限速（max 0.45 m/s）──────────────────────────────────────────
     const double MAX_SPEED = 0.45;   // m/s
     if (position_error > MAX_SPEED) {
         velocity *= (MAX_SPEED / position_error);
@@ -393,11 +400,11 @@ std::vector<double> e_hat_direction_constraint(
     // ── Step 7: 雅可比矩阵（前3行：线速度部分）───────────────────────────────
     Eigen::MatrixXd full_jacobian;
     Eigen::Vector3d ref_pt(0.0, 0.0, 0.0);
-    if (!robot_state.getJacobian(
+    if (!arm_state->getJacobian(
             joint_model_group,
-            robot_state.getLinkModel(end_effector_link),
+            arm_state->getLinkModel(end_effector_link),
             ref_pt, full_jacobian)) {
-        RCLCPP_ERROR(LOGGER, "e_hat_direction_constraint: failed to compute Jacobian");
+        RCLCPP_ERROR(LOGGER, "direction_constraint: failed to compute Jacobian");
         return {};
     }
     Eigen::MatrixXd J_lin = full_jacobian.topRows(3);   // 3 × n
@@ -476,4 +483,5 @@ std::vector<double> e_hat_direction_constraint(
         "e_hat_constraint: err=%.4fm cond=%.1f λ=%.4f e_hat_rm=%.4fm dt=%.3fs",
         position_error, condition_number, damping, e_hat_component, dt);
 
-    return result;}
+    return result;
+}
