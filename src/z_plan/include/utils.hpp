@@ -128,6 +128,9 @@ std::vector<double> direction_constraint(
     const std::string& end_effector_link,
     const std::vector<std::string>& joint_names,
     double dt = 0.05,
-    moveit::core::RobotState* arm_state = nullptr);
+    moveit::core::RobotState* arm_state = nullptr,
+    const Eigen::Quaterniond* desired_ee_orientation = nullptr,
+    const bool change_joint6_allowed = false,
+    const bool change_link6_orientation_allowed = false);
 
 #endif

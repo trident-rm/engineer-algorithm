@@ -18,6 +18,7 @@
 
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <visualization_msgs/msg/marker.hpp>
+#include <moveit_msgs/msg/display_robot_state.hpp>
 #include <moveit/robot_state/conversions.hpp>
 #include <geometry_msgs/msg/pose.hpp>
 #include <Eigen/Geometry>
@@ -103,10 +104,6 @@ public:
         end_effector_link_ = move_group_->getEndEffectorLink();
         joint_names_ = joint_model_group_->getActiveJointModelNames();
         
-        // 初始化缓存的 RobotState（避免每次控制循环重复构造）
-        cached_arm_state_ = std::make_unique<moveit::core::RobotState>(robot_model_);
-        cached_arm_state_->setToDefaultValues();
-        
         RCLCPP_INFO(LOGGER, "Planning group: %s, End effector: %s", 
                     planning_group.c_str(), end_effector_link_.c_str());
         RCLCPP_INFO(LOGGER, "Joint names: %zu joints", joint_names_.size());
@@ -131,6 +128,14 @@ public:
         controller_visual_tools_ = std::make_shared<moveit_visual_tools::MoveItVisualTools>(
             node_, "base_link", "controller_markers", robot_model_);
         controller_visual_tools_->deleteAllMarkers();
+        controller_visual_tools_->setLifetime(0.0);  // 永久显示，不因超时消失
+
+        // 初始化 controller DisplayRobotState 发布器（直接发布，无批次延迟）
+        controller_state_pub_ = node_->create_publisher<moveit_msgs::msg::DisplayRobotState>(
+            "controller_display_robot_state", rclcpp::QoS(1).transient_local());
+        
+        restrict_arm_state_pub_ = node_->create_publisher<moveit_msgs::msg::DisplayRobotState>(
+            "restrict_arm_display_robot_state", rclcpp::QoS(1).transient_local());
         
         // 初始化标题文本标记（使用不同的话题名避免冲突）
         marker_pub_ = node_->create_publisher<visualization_msgs::msg::Marker>("real_world_text_markers", 10);
@@ -173,34 +178,82 @@ public:
     }
     
     /**
-     * @brief 可视化当前机械臂状态（复用 cached_arm_state_，无需重建 RobotState）
+     * @brief 可视化当前机械臂状态
      */
     void visualize_current_state(const std::vector<double>& joint_angles) {
-        if (!is_initialized_ || !robot_model_ || !cached_arm_state_) {
+        if (!is_initialized_ || !robot_model_) {
             return;
         }
-        // cached_arm_state_ 已在 control_callback 开头更新，直接使用
-        visual_tools_->publishRobotState(*cached_arm_state_, rviz_visual_tools::GREEN);
+        moveit::core::RobotState robot_state(robot_model_);
+        for (size_t i = 0; i < joint_names_.size() && i < joint_angles.size(); ++i) {
+            robot_state.setJointPositions(joint_names_[i], &joint_angles[i]);
+        }
+        robot_state.update();
+        visual_tools_->publishRobotState(robot_state, rviz_visual_tools::GREEN);
     }
     
     /**
-     * @brief 可视化控制器状态（紫色）
+     * @brief 可视化控制器状态（紫色）—— 通过 DisplayRobotState 直接发布，无闪烁
      */
     void visualize_controller_state(const std::vector<double>& joint_angles) {
         if (!is_initialized_ || !robot_model_ || joint_angles.size() != joint_names_.size()) {
             return;
         }
-        
+
         moveit::core::RobotState robot_state(robot_model_);
-        
         for (size_t i = 0; i < joint_names_.size() && i < joint_angles.size(); ++i) {
             robot_state.setJointPositions(joint_names_[i], &joint_angles[i]);
         }
         robot_state.update();
-        
-        controller_visual_tools_->publishRobotState(robot_state, rviz_visual_tools::PURPLE);
+
+        // 使用 DisplayRobotState 消息直接发布（latched，持续显示，无批次延迟）
+        moveit_msgs::msg::DisplayRobotState display_msg;
+        moveit::core::robotStateToRobotStateMsg(robot_state, display_msg.state);
+
+        // 将所有 link 染成紫色
+        const auto& link_names = robot_model_->getLinkModelNames();
+        for (const auto& link_name : link_names) {
+            moveit_msgs::msg::ObjectColor color;
+            color.id = link_name;
+            color.color.r = 0.6f;
+            color.color.g = 0.0f;
+            color.color.b = 0.8f;
+            color.color.a = 1.0f;
+            display_msg.highlight_links.push_back(color);
+        }
+
+        controller_state_pub_->publish(display_msg);
     }
-    
+
+    /**
+     * @brief 可视化约束后的目标状态（蓝色）—— UP/TURN/ROLL 模式中使用
+     */
+    void visualize_restricted_state(const std::vector<double>& joint_angles) {
+        if (!is_initialized_ || !robot_model_ || joint_angles.size() != joint_names_.size()) {
+            return;
+        }
+        moveit::core::RobotState robot_state(robot_model_);
+        for (size_t i = 0; i < joint_names_.size() && i < joint_angles.size(); ++i) {
+            robot_state.setJointPositions(joint_names_[i], &joint_angles[i]);
+        }
+        robot_state.update();
+
+        moveit_msgs::msg::DisplayRobotState display_msg;
+        moveit::core::robotStateToRobotStateMsg(robot_state, display_msg.state);
+
+        const auto& link_names = robot_model_->getLinkModelNames();
+        for (const auto& link_name : link_names) {
+            moveit_msgs::msg::ObjectColor color;
+            color.id = link_name;
+            color.color.r = 0.0f;
+            color.color.g = 0.4f;
+            color.color.b = 1.0f;
+            color.color.a = 1.0f;
+            display_msg.highlight_links.push_back(color);
+        }
+        restrict_arm_state_pub_->publish(display_msg);
+    }
+
     /**
      * @brief 可视化坐标系方向
      */
@@ -263,7 +316,6 @@ public:
         for (int i = 0; i <= segments; ++i) {
             double angle = 2.0 * M_PI * i / segments;
             Eigen::Vector3d point = position + radius * (std::cos(angle) * u + std::sin(angle) * v);
-            
             geometry_msgs::msg::Point p;
             p.x = point.x();
             p.y = point.y();
@@ -451,15 +503,6 @@ private:
         controller_angles[1] = -controller_angles[1];
         controller_angles[4] = 6.28 - controller_angles[4];
 
-        // ── 每周期只 FK 一次：更新缓存的 RobotState ──────────────────────────
-        // cached_arm_state_ 复用给 visualize_current_state / compute_end_effector_pose
-        // / direction_constraint，避免 3 次重复 FK 计算
-        if (cached_arm_state_) {
-            for (size_t i = 0; i < joint_names_.size() && i < robo_arm_angles.size(); ++i)
-                cached_arm_state_->setJointPositions(joint_names_[i], &robo_arm_angles[i]);
-            cached_arm_state_->update();
-        }
-        
         // 计算重力补偿力矩
         latest_torques_ = compute_gravity_compensation_(robo_arm_angles);
         
@@ -470,7 +513,6 @@ private:
             if (control_mode == UP) {
                 reference_pose_ = compute_end_effector_pose(robo_arm_angles);
                 reference_pose_initialized_ = true;
-                
                 // e_hat_direction 是 link6 的 x 轴方向在世界坐标系中的表示
                 Eigen::Quaterniond quat(
                     reference_pose_.orientation.w,
@@ -478,7 +520,7 @@ private:
                     reference_pose_.orientation.y,
                     reference_pose_.orientation.z
                 );
-                e_hat_direction_ = quat * Eigen::Vector3d(1, 0, 0);  // link6 的 x 轴
+                e_hat_direction_ = quat * Eigen::Vector3d(0, 1, 0);  // link6 的 x 轴
                 
                 RCLCPP_INFO(LOGGER, "UP mode entered:");
                 RCLCPP_INFO(LOGGER, "  e_hat direction: [%.3f, %.3f, %.3f]",
@@ -502,10 +544,62 @@ private:
                 RCLCPP_INFO(LOGGER, "  normal direction: [%.3f, %.3f, %.3f]",
                            normal_direction_.x(), normal_direction_.y(), normal_direction_.z());
             }
+
+            if (control_mode == RESET) {
+
+                reset_trajectory_points_.clear();
+                reset_trajectory_index_ = 0;
+
+                std::vector<double> hw = {0.0, 2.65, -0.86, 3.14, 3.14, 0.0};
+                // hardware → URDF 逆变换（与 control_callback 中的正变换一致）
+                std::vector<double> urdf_target = hw;
+                urdf_target[1] = -urdf_target[1];
+                urdf_target[4] = 6.28 - urdf_target[4];
+
+                // 以当前机械臂角度为起点设置规划起始状态
+                moveit::core::RobotState start_state(robot_model_);
+                for (size_t i = 0; i < joint_names_.size(); ++i)
+                    start_state.setJointPositions(joint_names_[i], &robo_arm_angles[i]);
+                start_state.update();
+                move_group_->setStartState(start_state);
+
+                // 设置目标关节角
+                move_group_->setJointValueTarget(
+                    std::map<std::string, double>{
+                        {joint_names_[0], urdf_target[0]},
+                        {joint_names_[1], urdf_target[1]},
+                        {joint_names_[2], urdf_target[2]},
+                        {joint_names_[3], urdf_target[3]},
+                        {joint_names_[4], urdf_target[4]},
+                        {joint_names_[5], urdf_target[5]},
+                    });
+                move_group_->setMaxVelocityScalingFactor(0.05);       // 0~1，越小越慢
+                move_group_->setMaxAccelerationScalingFactor(0.05);
+                moveit::planning_interface::MoveGroupInterface::Plan plan;
+                if (move_group_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+                    const auto& jt = plan.trajectory.joint_trajectory;
+                    for (const auto& pt : jt.points) {
+                        if (pt.positions.size() == joint_names_.size())
+                            reset_trajectory_points_.push_back(
+                                std::vector<double>(pt.positions.begin(), pt.positions.end()));
+                    }
+                    RCLCPP_INFO(LOGGER, "RESET mode: planned %zu waypoints to home position",
+                                reset_trajectory_points_.size());
+                } else {
+                    RCLCPP_WARN(LOGGER, "RESET mode: MoveIt planning failed, will hold current pose");
+                }
+                move_group_->setStartStateToCurrentState();
+                move_group_->setMaxVelocityScalingFactor(0.1);        // 规划完恢复默认
+                move_group_->setMaxAccelerationScalingFactor(0.1);
+
+            }
             
             last_control_mode_ = control_mode;
         }
         
+        // 每帧清空上一帧的箭头/文字标记，避免残留
+        visual_tools_->deleteAllMarkers();
+
         //可视化当前机械臂状态
         visualize_current_state(robo_arm_angles);
         
@@ -534,19 +628,20 @@ private:
             case TURN:
                 visualize_ehat_direction(ee_position);
                 visualize_up_direction(ee_position);
-                handle_mode_turn();
+                visualize_normal_direction(ee_position);
+                handle_mode_turn(robo_arm_angles, controller_angles);
                 break;
             case ROLL:
                 handle_mode_roll(robo_arm_angles, controller_angles);
                 break;
             case RESET:
-                handle_mode_reset();
+                handle_mode_reset(robo_arm_angles);
                 break;
         }
         
         // 统一触发所有可视化更新
         visual_tools_->trigger();
-        controller_visual_tools_->trigger();
+        // controller 状态已通过 DisplayRobotState 直接发布，无需 trigger
     }
     
     /**
@@ -584,8 +679,12 @@ private:
             reference_pose_.position.y,
             reference_pose_.position.z);
 
-        // 调用高效重载：传入缓存的 arm_state，跳过内部重建 RobotState
-        // gain=0.20：每 20ms 消除 ~18% 误差，时间常数约 90ms（原0.05时约400ms）
+        // gain=0.20：每 20ms 消除 ~18% 误差，时间常数约 90ms
+        Eigen::Quaterniond ref_orient(
+            reference_pose_.orientation.w,
+            reference_pose_.orientation.x,
+            reference_pose_.orientation.y,
+            reference_pose_.orientation.z);
         std::vector<double> target_angles = direction_constraint(
             robo_arm_angles,
             controller_angles,
@@ -596,7 +695,10 @@ private:
             end_effector_link_,
             joint_names_,
             0.20,                    // gain（控制跟随速度）
-            cached_arm_state_.get()); // 复用缓存状态，跳过重建 FK
+            nullptr,                 // 不复用缓存状态
+            &ref_orient,
+            false,
+            false);            // 固定 link6 朝向
 
         if (target_angles.empty()) {
             // 雅可比计算失败（奇异点附近），维持当前角度
@@ -606,6 +708,7 @@ private:
             return;
         }
 
+        visualize_restricted_state(target_angles);
         serial_node_->send_roboarm_with_controller(
             latest_torques_, convert_urdf_to_hardware(target_angles));
     }
@@ -637,7 +740,19 @@ private:
      * 以距离末端位置 100mm 的点为圆心，绕 normal_direction 往 up_direction 方向转90度
      */
     void handle_mode_turn(const std::vector<double>& robo_arm_angles, const std::vector<double>& controller_angles) {
-        // 调用高效重载：传入缓存的 arm_state
+        if (!reference_pose_initialized_) return;
+
+        // TURN 模式以切换时的末端位置（up_end_pose_）为参考点
+        Eigen::Vector3d reference_position(
+            up_end_pose_.position.x,
+            up_end_pose_.position.y,
+            up_end_pose_.position.z);
+
+        Eigen::Quaterniond ref_orient(
+            up_end_pose_.orientation.w,
+            up_end_pose_.orientation.x,
+            up_end_pose_.orientation.y,
+            up_end_pose_.orientation.z);
         std::vector<double> target_angles = direction_constraint(
             robo_arm_angles,
             controller_angles,
@@ -648,7 +763,10 @@ private:
             end_effector_link_,
             joint_names_,
             0.20,                    // gain，与 UP 模式一致
-            cached_arm_state_.get()); // 复用缓存状态
+            nullptr,                 // 不复用缓存状态
+            &ref_orient,            // 固定 link6 朝向（以 up_end_pose_ 为基准）
+            false,
+            true);                 
 
         if (target_angles.empty()) {
             // 雅可比计算失败（奇异点附近），维持当前角度
@@ -658,6 +776,7 @@ private:
             return;
         }
 
+        visualize_restricted_state(target_angles);
         serial_node_->send_roboarm_with_controller(
             latest_torques_, convert_urdf_to_hardware(target_angles));
         /*
@@ -768,16 +887,71 @@ private:
         const std::vector<double>& robo_arm_angles,
         const std::vector<double>& controller_angles)
     {
-        // 暂时复用 UP 模式的逻辑
-        handle_mode_up(robo_arm_angles, controller_angles);
+        if (!reference_pose_initialized_) return;
+
+        // TURN 模式以切换时的末端位置（up_end_pose_）为参考点
+        Eigen::Vector3d reference_position(
+            up_end_pose_.position.x,
+            up_end_pose_.position.y,
+            up_end_pose_.position.z);
+
+        Eigen::Quaterniond ref_orient(
+            up_end_pose_.orientation.w,
+            up_end_pose_.orientation.x,
+            up_end_pose_.orientation.y,
+            up_end_pose_.orientation.z);
+        std::vector<double> target_angles = direction_constraint(
+            robo_arm_angles,
+            controller_angles,
+            reference_position,
+            e_hat_direction_,
+            robot_model_,
+            joint_model_group_,
+            end_effector_link_,
+            joint_names_,
+            0.20,                    // gain，与 UP 模式一致
+            nullptr,                 // 不复用缓存状态
+            &ref_orient,            // 固定 link6 朝向（以 up_end_pose_ 为基准）
+            true,                  // 允许改变 joint6 角度
+            true);                 // 允许改变 link6朝向
+
+        if (target_angles.empty()) {
+            // 雅可比计算失败（奇异点附近），维持当前角度
+            RCLCPP_WARN(LOGGER, "TURN mode: direction_constraint failed (singular)");
+            serial_node_->send_roboarm_with_controller(
+                latest_torques_, convert_urdf_to_hardware(robo_arm_angles));
+            return;
+        }
+        visualize_restricted_state(target_angles);
+        serial_node_->send_roboarm_with_controller(latest_torques_, convert_urdf_to_hardware(target_angles));
     }
 
     /**
-     * @brief 处理 RESET 模式（待实现）
+     * @brief 处理 RESET 模式
+     *
+     * 按规划好的轨迹逐步发送，每个控制周期推进一步；
+     * 到达终点后原地维持目标位置。
      */
-    void handle_mode_reset() {
+    void handle_mode_reset(const std::vector<double>& robo_arm_angles) {
+        if (reset_trajectory_points_.empty()) {
+            // 规划失败或已完成——维持当前角度
+            serial_node_->send_roboarm_with_controller(
+                latest_torques_, convert_urdf_to_hardware(robo_arm_angles));
+            return;
+        }
 
-        RCLCPP_DEBUG(LOGGER, "Mode RESET: not implemented yet");
+        // 取当前步目标
+        const auto& target = reset_trajectory_points_[reset_trajectory_index_];
+        serial_node_->send_roboarm_with_controller(
+            latest_torques_, convert_urdf_to_hardware(target));
+
+        // 推进到下一步（到达末尾后停在最后一帧）
+        if (reset_trajectory_index_ + 1 < reset_trajectory_points_.size()) {
+            ++reset_trajectory_index_;
+        }
+
+        RCLCPP_DEBUG(LOGGER, "RESET: step %zu / %zu",
+                     reset_trajectory_index_, reset_trajectory_points_.size());
     }
 
     /**
@@ -897,20 +1071,14 @@ private:
      * @brief 计算末端执行器位姿
      */
     geometry_msgs::msg::Pose compute_end_effector_pose(const std::vector<double>& joint_angles) {
-        // 直接复用 cached_arm_state_（已在 control_callback 开头更新）
-        moveit::core::RobotState* state_ptr = cached_arm_state_.get();
-        std::unique_ptr<moveit::core::RobotState> temp_state;
-        if (!state_ptr) {
-            // 备用：如果缓存未初始化（构造期间调用），临时新建
-            temp_state = std::make_unique<moveit::core::RobotState>(robot_model_);
-            for (size_t i = 0; i < joint_names_.size(); ++i)
-                temp_state->setJointPositions(joint_names_[i], &joint_angles[i]);
-            temp_state->update();
-            state_ptr = temp_state.get();
+        moveit::core::RobotState robot_state(robot_model_);
+        for (size_t i = 0; i < joint_names_.size() && i < joint_angles.size(); ++i) {
+            robot_state.setJointPositions(joint_names_[i], &joint_angles[i]);
         }
+        robot_state.update();
         
         Eigen::Isometry3d ee_transform = 
-            state_ptr->getGlobalLinkTransform(end_effector_link_);
+            robot_state.getGlobalLinkTransform(end_effector_link_);
         
         geometry_msgs::msg::Pose pose;
         pose.position.x = ee_transform.translation().x();
@@ -956,8 +1124,10 @@ private:
     
     // RViz 可视化工具
     moveit_visual_tools::MoveItVisualToolsPtr visual_tools_;
-    moveit_visual_tools::MoveItVisualToolsPtr controller_visual_tools_;  // 用于控制器状态
+    moveit_visual_tools::MoveItVisualToolsPtr controller_visual_tools_;  // 备用（暂未使用）
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
+    rclcpp::Publisher<moveit_msgs::msg::DisplayRobotState>::SharedPtr controller_state_pub_;
+    rclcpp::Publisher<moveit_msgs::msg::DisplayRobotState>::SharedPtr restrict_arm_state_pub_;
 
     //坐标轴方向
     Eigen::Vector3d e_hat_direction_;
@@ -983,12 +1153,12 @@ private:
     // 初始化完成标志
     bool is_initialized_ = false;
     
-    // 缓存的机械臂 RobotState（每周期只 update() 一次，供 FK/Jacobian/可视化复用）
-    std::unique_ptr<moveit::core::RobotState> cached_arm_state_;
-    
-    // UP模式相关变量（已改用雅可比方案，不再需要状态机）
-    // 保留 joint_position_tolerance_ 供 check_joint_positions_reached 使用（TURN模式可能用到）
+    // UP模式相关变量
     const double joint_position_tolerance_ = 0.05;
+
+    // RESET 模式轨迹缓存
+    std::vector<std::vector<double>> reset_trajectory_points_;
+    size_t reset_trajectory_index_ = 0;
 
 };
 

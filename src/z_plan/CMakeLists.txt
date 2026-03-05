@@ -22,7 +22,6 @@ find_package(moveit_core REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(pinocchio REQUIRED)
 find_package(visualization_msgs REQUIRED)
-find_package(moveit_servo REQUIRED)
 find_package(control_msgs REQUIRED)
 
 # Include directories
@@ -119,24 +118,6 @@ if(serial_FOUND)
     serial
     tf2_eigen
     moveit_core
-    moveit_servo
-    control_msgs
-  )
-
-  # Add executable for servo-based real-time control
-  add_executable(real_world_servo src/real_world_servo.cpp)
-  target_link_libraries(real_world_servo utils usb_data pinocchio::pinocchio)
-  ament_target_dependencies(real_world_servo
-    rclcpp
-    geometry_msgs
-    moveit_ros_planning_interface
-    moveit_visual_tools
-    moveit_msgs
-    trajectory_msgs
-    serial
-    tf2_eigen
-    moveit_core
-    moveit_servo
     control_msgs
   )
 
@@ -200,7 +181,7 @@ if(serial_FOUND)
   )
 
   list(APPEND _install_targets
-    gravity_comp_debug real_world real_world_new real_world_servo read_data)
+    gravity_comp_debug real_world real_world_new read_data)
 endif()
 
 install(TARGETS ${_install_targets}

@@ -351,7 +351,10 @@ std::vector<double> direction_constraint(
     const std::string& end_effector_link,
     const std::vector<std::string>& joint_names,
     double dt,
-    moveit::core::RobotState* arm_state)
+    moveit::core::RobotState* arm_state,
+    const Eigen::Quaterniond* /*desired_ee_orientation*/,
+    const bool /*change_joint6_allowed*/,
+    const bool /*change_link6_orientation_allowed*/)
 {
     // ── Step 1: FK(controller) → controller_ee ────────────────────────────────
     moveit::core::RobotState controller_state(robot_model);

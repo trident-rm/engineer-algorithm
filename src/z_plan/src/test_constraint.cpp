@@ -139,7 +139,6 @@ public:
             });
         
         RCLCPP_INFO(LOGGER, "Initialization complete. Starting test...");
-        RCLCPP_INFO(LOGGER, "");
         RCLCPP_INFO(LOGGER, "=== Legend ===");
         RCLCPP_INFO(LOGGER, "  Green arm  = Current state (constrained)");
         RCLCPP_INFO(LOGGER, "  Purple arm = Controller target (unconstrained)");
