@@ -337,6 +337,7 @@ geometry_msgs::msg::Pose compute_target_pose_along_direction(
     return target_pose;
 }
 
+
 /**
  * @brief  对控制器末端位置施加 e_hat 方向约束，用雅可比伪逆（自适应阻尼最小二乘）求一步关节增量
  * @note   算法与 test_constraint.cpp::constrained_step() 一致
@@ -352,9 +353,9 @@ std::vector<double> direction_constraint(
     const std::vector<std::string>& joint_names,
     double dt,
     moveit::core::RobotState* arm_state,
-    const Eigen::Quaterniond* /*desired_ee_orientation*/,
-    const bool /*change_joint6_allowed*/,
-    const bool /*change_link6_orientation_allowed*/,
+    const Eigen::Quaterniond* desired_ee_orientation,
+    const bool change_joint6_allowed,
+    const bool change_link6_orientation_allowed,
     const Eigen::Vector3d* controller_ee_reference)
 {
     // ── Step 1: FK(controller) → controller_ee ────────────────────────────────
@@ -379,10 +380,12 @@ std::vector<double> direction_constraint(
         arm_state->getGlobalLinkTransform(end_effector_link).translation();
 
     // ── Step 3: 投影到 constrain_direction 垂直平面，得到约束目标 ───────────────────────────
+    // 若提供 controller_ee_reference（模式切换时的控制器位置），则以相对位移驱动，
+    // 切换瞬间 displacement=0，避免机械臂跳变到控制器映射位置。
     Eigen::Vector3d constrain_direction_normalized = constrain_direction.normalized();
     Eigen::Vector3d displacement = (controller_ee_reference != nullptr)
-        ? (controller_ee - *controller_ee_reference)   // 相对运动：消除模式切换时的跳变
-        : (controller_ee - reference_position);        // 绝对运动
+        ? (controller_ee - *controller_ee_reference)   // 相对运动：以模式切换时为原点
+        : (controller_ee - reference_position);        // 绝对运动：原逻辑
     double constrain_component = displacement.dot(constrain_direction_normalized);
     Eigen::Vector3d constrained_target = reference_position + (displacement - constrain_component * constrain_direction_normalized);
 
@@ -390,11 +393,74 @@ std::vector<double> direction_constraint(
     Eigen::Vector3d velocity = constrained_target - current_ee;
     velocity = velocity - velocity.dot(constrain_direction_normalized) * constrain_direction_normalized;   // 双重投影，防止数值漂移
 
-    // ── Step 5: 死区（< 0.5 mm 不动）────────────────────────────────────────
+    // ── 姿态误差计算 ─────────────────────────────────────────────────────────
+    // UP   模式（!change_link6_orientation_allowed）：完全锁定朝向 = desired_ee_orientation
+    // ROLL 模式（change_joint6_allowed）            ：z 轴方向锁定，绕 z 轴跟随控制器
+    // TURN 模式 / 无朝向需求                        ：omega = 0，退化为纯位置控制
+    Eigen::Vector3d omega = Eigen::Vector3d::Zero();
+    const bool use_orientation_control = (desired_ee_orientation != nullptr);
+
+    if (use_orientation_control) {
+        Eigen::Matrix3d current_rot =
+            arm_state->getGlobalLinkTransform(end_effector_link).rotation();
+        Eigen::Quaterniond current_q(current_rot);
+
+        if (!change_link6_orientation_allowed) {
+            // ── UP：完全锁定朝向 ──────────────────────────────────────────────
+            // ω = 2 · vec( q_des · q_cur⁻¹ )，世界坐标系角速度
+            Eigen::Quaterniond q_err = (*desired_ee_orientation) * current_q.inverse();
+            if (q_err.w() < 0) q_err.coeffs() = -q_err.coeffs();   // 取短弧
+            omega = 2.0 * q_err.vec();
+
+        } else if (change_joint6_allowed) {
+            // ── ROLL：z 轴锁定，绕 z 跟随控制器 ─────────────────────────────
+            // 参考 z 轴（进入 ROLL 时记录，在世界坐标系中固定不变）
+            Eigen::Vector3d z_ref =
+                desired_ee_orientation->toRotationMatrix().col(2);
+
+            // 控制器末端 x 轴在世界坐标系中的方向
+            Eigen::Matrix3d ctrl_rot =
+                controller_state.getGlobalLinkTransform(end_effector_link).rotation();
+            Eigen::Vector3d ctrl_x = ctrl_rot.col(0);
+
+            // 将控制器 x 轴投影到 z_ref 垂直平面，得到"绕 z 的旋转分量"
+            Eigen::Vector3d target_x = ctrl_x - ctrl_x.dot(z_ref) * z_ref;
+            if (target_x.norm() < 1e-6) {
+                // 控制器 x 轴与 z_ref 平行（退化），保持参考 x 轴
+                target_x = desired_ee_orientation->toRotationMatrix().col(0);
+            } else {
+                target_x.normalize();
+            }
+            Eigen::Vector3d target_y = z_ref.cross(target_x).normalized();
+
+            // 目标旋转矩阵：z 轴固定 + 从控制器提取的绕 z 旋转
+            Eigen::Matrix3d target_rot;
+            target_rot.col(0) = target_x;
+            target_rot.col(1) = target_y;
+            target_rot.col(2) = z_ref;
+
+            Eigen::Quaterniond q_err =
+                Eigen::Quaterniond(target_rot) * current_q.inverse();
+            if (q_err.w() < 0) q_err.coeffs() = -q_err.coeffs();
+            omega = 2.0 * q_err.vec();
+        }
+        // change_link6_orientation_allowed=true && !change_joint6_allowed（TURN）
+        // → omega 保持 0，姿态自由变化
+
+        // 限制角速度幅值（max 1.0 rad/s）
+        const double MAX_ANGULAR_SPEED = 1.0;
+        double omega_norm = omega.norm();
+        if (omega_norm > MAX_ANGULAR_SPEED)
+            omega *= (MAX_ANGULAR_SPEED / omega_norm);
+    }
+
+    // ── Step 5: 死区（位置 < 0.5 mm 且姿态 < 0.01 rad 时不动）──────────────
     double position_error = velocity.norm();
-    const double DEAD_ZONE = 0.0005;   // m
-    if (position_error < DEAD_ZONE) {
-        return robo_arm_angles;  // 已到目标，维持当前角度
+    double orient_error   = omega.norm();
+    const double DEAD_ZONE        = 0.0005;   // m
+    const double ORIENT_DEAD_ZONE = 0.01;     // rad（约 0.6°）
+    if (position_error < DEAD_ZONE && orient_error < ORIENT_DEAD_ZONE) {
+        return robo_arm_angles;
     }
 
     // ── Step 6: 限速（max 0.45 m/s）──────────────────────────────────────────
@@ -403,7 +469,7 @@ std::vector<double> direction_constraint(
         velocity *= (MAX_SPEED / position_error);
     }
 
-    // ── Step 7: 雅可比矩阵（前3行：线速度部分）───────────────────────────────
+    // ── Step 7: 雅可比矩阵；有姿态控制时使用完整 6 × n ──────────────────────
     Eigen::MatrixXd full_jacobian;
     Eigen::Vector3d ref_pt(0.0, 0.0, 0.0);
     if (!arm_state->getJacobian(
@@ -413,10 +479,20 @@ std::vector<double> direction_constraint(
         RCLCPP_ERROR(LOGGER, "direction_constraint: failed to compute Jacobian");
         return {};
     }
-    Eigen::MatrixXd J_lin = full_jacobian.topRows(3);   // 3 × n
+
+    Eigen::MatrixXd J;
+    Eigen::VectorXd vel_cmd;
+    if (use_orientation_control) {
+        J = full_jacobian;           // 6 × n（线速度 + 角速度）
+        vel_cmd.resize(6);
+        vel_cmd << velocity, omega;
+    } else {
+        J = full_jacobian.topRows(3);   // 3 × n（仅线速度，退化为原逻辑）
+        vel_cmd = velocity;
+    }
 
     // ── Step 8: SVD → 条件数 → 自适应阻尼 ───────────────────────────────────
-    Eigen::JacobiSVD<Eigen::MatrixXd> svd(J_lin);
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(J);
     const Eigen::VectorXd& sv = svd.singularValues();
     double condition_number = (sv(sv.size() - 1) > 1e-10)
                               ? sv(0) / sv(sv.size() - 1)
@@ -436,11 +512,12 @@ std::vector<double> direction_constraint(
         damping = DAMPING_MIN + t * (DAMPING_MAX - DAMPING_MIN);
     }
 
-    // ── Step 9: J_pinv = Jᵀ(JJᵀ + λ²I)⁻¹；Δq = J_pinv · velocity · dt ──────
-    Eigen::MatrixXd JJt = J_lin * J_lin.transpose()
-                        + (damping * damping) * Eigen::Matrix3d::Identity();
-    Eigen::MatrixXd J_pinv = J_lin.transpose() * JJt.inverse();   // n × 3
-    Eigen::VectorXd delta_q = J_pinv * velocity * dt;
+    // ── Step 9: J_pinv = Jᵀ(JJᵀ + λ²I)⁻¹；Δq = J_pinv · vel_cmd · dt ──────
+    int jrows = static_cast<int>(J.rows());
+    Eigen::MatrixXd JJt = J * J.transpose()
+                        + (damping * damping) * Eigen::MatrixXd::Identity(jrows, jrows);
+    Eigen::MatrixXd J_pinv = J.transpose() * JJt.inverse();   // n × jrows
+    Eigen::VectorXd delta_q = J_pinv * vel_cmd * dt;
 
     // ── Step 10: 关节角变化量等比缩放（硬限幅 0.1 rad/cycle）────────────────
     const double MAX_JOINT_DELTA = 0.1;   // rad
@@ -486,8 +563,8 @@ std::vector<double> direction_constraint(
     }
 
     RCLCPP_DEBUG(LOGGER,
-        "e_hat_constraint: err=%.4fm cond=%.1f λ=%.4f e_hat_rm=%.4fm dt=%.3fs",
-        position_error, condition_number, damping, constrain_component, dt);
+        "direction_constraint: pos_err=%.4fm orient_err=%.4frad cond=%.1f λ=%.4f dt=%.3fs",
+        position_error, orient_error, condition_number, damping, dt);
 
     return result;
 }
