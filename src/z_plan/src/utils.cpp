@@ -354,7 +354,8 @@ std::vector<double> direction_constraint(
     moveit::core::RobotState* arm_state,
     const Eigen::Quaterniond* /*desired_ee_orientation*/,
     const bool /*change_joint6_allowed*/,
-    const bool /*change_link6_orientation_allowed*/)
+    const bool /*change_link6_orientation_allowed*/,
+    const Eigen::Vector3d* controller_ee_reference)
 {
     // ── Step 1: FK(controller) → controller_ee ────────────────────────────────
     moveit::core::RobotState controller_state(robot_model);
@@ -379,7 +380,9 @@ std::vector<double> direction_constraint(
 
     // ── Step 3: 投影到 constrain_direction 垂直平面，得到约束目标 ───────────────────────────
     Eigen::Vector3d constrain_direction_normalized = constrain_direction.normalized();
-    Eigen::Vector3d displacement = controller_ee - reference_position;
+    Eigen::Vector3d displacement = (controller_ee_reference != nullptr)
+        ? (controller_ee - *controller_ee_reference)   // 相对运动：消除模式切换时的跳变
+        : (controller_ee - reference_position);        // 绝对运动
     double constrain_component = displacement.dot(constrain_direction_normalized);
     Eigen::Vector3d constrained_target = reference_position + (displacement - constrain_component * constrain_direction_normalized);
 

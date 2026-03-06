@@ -131,6 +131,7 @@ std::vector<double> direction_constraint(
     moveit::core::RobotState* arm_state = nullptr,
     const Eigen::Quaterniond* desired_ee_orientation = nullptr,
     const bool change_joint6_allowed = false,
-    const bool change_link6_orientation_allowed = false);
+    const bool change_link6_orientation_allowed = false,
+    const Eigen::Vector3d* controller_ee_reference = nullptr);
 
 #endif
