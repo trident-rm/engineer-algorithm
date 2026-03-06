@@ -122,7 +122,7 @@ std::vector<double> direction_constraint(
     const std::vector<double>& robo_arm_angles,
     const std::vector<double>& controller_angles,
     const Eigen::Vector3d& reference_position,
-    const Eigen::Vector3d& e_hat,
+    const Eigen::Vector3d& constrain_direction,
     const moveit::core::RobotModelConstPtr& robot_model,
     const moveit::core::JointModelGroup* joint_model_group,
     const std::string& end_effector_link,

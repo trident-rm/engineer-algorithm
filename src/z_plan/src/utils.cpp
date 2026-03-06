@@ -345,7 +345,7 @@ std::vector<double> direction_constraint(
     const std::vector<double>& robo_arm_angles,
     const std::vector<double>& controller_angles,
     const Eigen::Vector3d& reference_position,
-    const Eigen::Vector3d& e_hat_in,
+    const Eigen::Vector3d& constrain_direction,
     const moveit::core::RobotModelConstPtr& robot_model,
     const moveit::core::JointModelGroup* joint_model_group,
     const std::string& end_effector_link,
@@ -377,15 +377,15 @@ std::vector<double> direction_constraint(
     Eigen::Vector3d current_ee =
         arm_state->getGlobalLinkTransform(end_effector_link).translation();
 
-    // ── Step 3: 投影到 e_hat 垂直平面，得到约束目标 ───────────────────────────
-    Eigen::Vector3d e_hat = e_hat_in.normalized();
+    // ── Step 3: 投影到 constrain_direction 垂直平面，得到约束目标 ───────────────────────────
+    Eigen::Vector3d constrain_direction_normalized = constrain_direction.normalized();
     Eigen::Vector3d displacement = controller_ee - reference_position;
-    double e_hat_component = displacement.dot(e_hat);
-    Eigen::Vector3d constrained_target = reference_position + (displacement - e_hat_component * e_hat);
+    double constrain_component = displacement.dot(constrain_direction_normalized);
+    Eigen::Vector3d constrained_target = reference_position + (displacement - constrain_component * constrain_direction_normalized);
 
-    // ── Step 4: 速度方向 = current_ee → constrained_target，再去 e_hat 分量 ──
+    // ── Step 4: 速度方向 = current_ee → constrained_target，再去 constrain_direction 分量 ──
     Eigen::Vector3d velocity = constrained_target - current_ee;
-    velocity = velocity - velocity.dot(e_hat) * e_hat;   // 双重投影，防止数值漂移
+    velocity = velocity - velocity.dot(constrain_direction_normalized) * constrain_direction_normalized;   // 双重投影，防止数值漂移
 
     // ── Step 5: 死区（< 0.5 mm 不动）────────────────────────────────────────
     double position_error = velocity.norm();
@@ -484,7 +484,7 @@ std::vector<double> direction_constraint(
 
     RCLCPP_DEBUG(LOGGER,
         "e_hat_constraint: err=%.4fm cond=%.1f λ=%.4f e_hat_rm=%.4fm dt=%.3fs",
-        position_error, condition_number, damping, e_hat_component, dt);
+        position_error, condition_number, damping, constrain_component, dt);
 
     return result;
 }

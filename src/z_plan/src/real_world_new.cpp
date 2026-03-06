@@ -520,7 +520,7 @@ private:
                     reference_pose_.orientation.y,
                     reference_pose_.orientation.z
                 );
-                e_hat_direction_ = quat * Eigen::Vector3d(0, 1, 0);  // link6 的 x 轴
+                e_hat_direction_ = quat * Eigen::Vector3d(0, 1, 0);  // link6 的 y 轴
                 
                 RCLCPP_INFO(LOGGER, "UP mode entered:");
                 RCLCPP_INFO(LOGGER, "  e_hat direction: [%.3f, %.3f, %.3f]",
@@ -620,7 +620,13 @@ private:
                 handle_mode_no(controller_angles);
                 break;
             case UP:
-                visualize_ehat_direction(ee_position);
+                if (reference_pose_initialized_) {
+                    // 平面固定在进入 UP 模式时的参考位置，与算法约束平面一致
+                    Eigen::Vector3d ref_pos(reference_pose_.position.x,
+                                           reference_pose_.position.y,
+                                           reference_pose_.position.z);
+                    visualize_ehat_direction(ref_pos);
+                }
                 visualize_reference_pose_info();  // 持续显示参考信息
                 handle_mode_up(robo_arm_angles, controller_angles);
                 //plan_and_execute_random_trajectory_in_plane(robo_arm_angles);
@@ -696,9 +702,12 @@ private:
             joint_names_,
             0.20,                    // gain（控制跟随速度）
             nullptr,                 // 不复用缓存状态
+            /*
             &ref_orient,
             false,
-            false);            // 固定 link6 朝向
+            false
+            */
+           );         
 
         if (target_angles.empty()) {
             // 雅可比计算失败（奇异点附近），维持当前角度
@@ -764,9 +773,12 @@ private:
             joint_names_,
             0.20,                    // gain，与 UP 模式一致
             nullptr,                 // 不复用缓存状态
-            &ref_orient,            // 固定 link6 朝向（以 up_end_pose_ 为基准）
+            /*
+            &ref_orient,         
             false,
-            true);                 
+            true
+            */
+           );                 
 
         if (target_angles.empty()) {
             // 雅可比计算失败（奇异点附近），维持当前角度
@@ -911,9 +923,11 @@ private:
             joint_names_,
             0.20,                    // gain，与 UP 模式一致
             nullptr,                 // 不复用缓存状态
-            &ref_orient,            // 固定 link6 朝向（以 up_end_pose_ 为基准）
-            true,                  // 允许改变 joint6 角度
-            true);                 // 允许改变 link6朝向
+            /*&ref_orient,            // 固定 link6 朝向（以 up_end_pose_ 为基准）
+            //true,                  // 允许改变 joint6 角度
+            //true                   // 允许改变 link6朝向
+            */                
+            );                 
 
         if (target_angles.empty()) {
             // 雅可比计算失败（奇异点附近），维持当前角度
