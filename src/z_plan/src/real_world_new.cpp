@@ -538,6 +538,14 @@ private:
                 up_direction_ = (Eigen::Vector3d(up_end_pose_.position.x, up_end_pose_.position.y, up_end_pose_.position.z) - 
                                  Eigen::Vector3d(reference_pose_.position.x, reference_pose_.position.y, reference_pose_.position.z)).normalized();
                 normal_direction_ = e_hat_direction_.cross(up_direction_).normalized();
+
+                // 记录模式切换时控制器的末端位置，用于相对位移驱动（避免跳变）
+                moveit::core::RobotState ctrl_state_tmp(robot_model_);
+                for (size_t i = 0; i < joint_names_.size(); ++i)
+                    ctrl_state_tmp.setJointPositions(joint_names_[i], &controller_angles[i]);
+                ctrl_state_tmp.update();
+                controller_ee_at_mode_start_ = ctrl_state_tmp.getGlobalLinkTransform(end_effector_link_).translation();
+
                 RCLCPP_INFO(LOGGER, "TURN mode entered:");
                 RCLCPP_INFO(LOGGER, "  up direction: [%.3f, %.3f, %.3f]",
                            up_direction_.x(), up_direction_.y(), up_direction_.z());
@@ -702,12 +710,10 @@ private:
             joint_names_,
             0.20,                    // gain（控制跟随速度）
             nullptr,                 // 不复用缓存状态
-            /*
-            &ref_orient,
-            false,
-            false
-            */
-           );         
+            &ref_orient,             // 完全锁定朝向
+            false,                 
+            false,                  
+            nullptr);             
 
         if (target_angles.empty()) {
             // 雅可比计算失败（奇异点附近），维持当前角度
@@ -771,14 +777,12 @@ private:
             joint_model_group_,
             end_effector_link_,
             joint_names_,
-            0.20,                    // gain，与 UP 模式一致
-            nullptr,                 // 不复用缓存状态
-            /*
-            &ref_orient,         
-            false,
-            true
-            */
-           );                 
+            0.20,
+            nullptr,
+            /*desired_ee_orientation=*/nullptr,
+            /*change_joint6_allowed=*/false,
+            /*change_link6_orientation_allowed=*/true,
+            &controller_ee_at_mode_start_);  // 相对位移驱动，避免切换跳变                 
 
         if (target_angles.empty()) {
             // 雅可比计算失败（奇异点附近），维持当前角度
@@ -921,13 +925,12 @@ private:
             joint_model_group_,
             end_effector_link_,
             joint_names_,
-            0.20,                    // gain，与 UP 模式一致
-            nullptr,                 // 不复用缓存状态
-            /*&ref_orient,            // 固定 link6 朝向（以 up_end_pose_ 为基准）
-            //true,                  // 允许改变 joint6 角度
-            //true                   // 允许改变 link6朝向
-            */                
-            );                 
+            0.20,
+            nullptr,
+            /*desired_ee_orientation=*/nullptr,
+            /*change_joint6_allowed=*/true,
+            /*change_link6_orientation_allowed=*/true,
+            &controller_ee_at_mode_start_);  // 相对位移驱动，避免切换跳变                 
 
         if (target_angles.empty()) {
             // 雅可比计算失败（奇异点附近），维持当前角度
@@ -1154,6 +1157,8 @@ private:
     
     //UP结束时的pose
     geometry_msgs::msg::Pose up_end_pose_;
+    // 进入 TURN/ROLL 模式时控制器末端 EE 位置（相对位移驱动，避免切换跳变）
+    Eigen::Vector3d controller_ee_at_mode_start_{0, 0, 0};
     
     // 模式切换记录
     uint8_t last_control_mode_;
