@@ -105,23 +105,25 @@ Eigen::Vector3d compute_e_hat_direction(const std::vector<std::vector<double>>& 
  *  10. 等比缩放 Δq（MAX_JOINT_DELTA = 0.1 rad/cycle）
  *  11. 关节限位裕度等比缩放
  *
- * @param  robo_arm_angles      当前机械臂关节角度 (rad)
- * @param  controller_angles    控制器关节角度 (rad)
- * @param  reference_position   UP 模式进入时的末端参考位置 (m)
- * @param  e_hat                约束方向单位向量（此方向上末端不可运动）
- * @param  robot_model          MoveIt 机器人模型
- * @param  joint_model_group    关节模型组
- * @param  end_effector_link    末端执行器连杆名称
- * @param  joint_names          关节名称列表
- * @param  dt                   控制增益（等效时间步长），默认 0.05
- * @param  arm_state            可选：外部已 update() 的机械臂 RobotState；非 nullptr 时跳过内部 FK 重建，
- *                              节省约 2/3 的重复 FK 开销（每周期在 control_callback 统一更新一次）
- * @retval std::vector<double>  约束后一步目标关节角度（死区时返回当前角度，失败时返回空）
+ * @param  robo_arm_angles         当前机械臂关节角度 (rad)
+ * @param  controller_angles       控制器关节角度 (rad)
+ * @param  reference_position      模式切换瞬间机械臂末端位置 (m)，作为约束平面原点
+ * @param  controller_ee_reference 模式切换瞬间控制器末端位置 (m)，作为位移原点（切换瞬间=0，避免跳变）
+ * @param  constrain_direction     约束方向单位向量（此方向上末端不可运动）
+ * @param  robot_model             MoveIt 机器人模型
+ * @param  joint_model_group       关节模型组
+ * @param  end_effector_link       末端执行器连杆名称
+ * @param  joint_names             关节名称列表
+ * @param  dt                      控制增益（等效时间步长），默认 0.05
+ * @param  arm_state               可选：外部已 update() 的机械臂 RobotState；非 nullptr 时跳过内部 FK 重建，
+ *                                 节省约 2/3 的重复 FK 开销（每周期在 control_callback 统一更新一次）
+ * @retval std::vector<double>     约束后一步目标关节角度（死区时返回当前角度，失败时返回空）
  */
 std::vector<double> direction_constraint(
     const std::vector<double>& robo_arm_angles,
     const std::vector<double>& controller_angles,
     const Eigen::Vector3d& reference_position,
+    const Eigen::Vector3d& controller_ee_reference,
     const Eigen::Vector3d& constrain_direction,
     const moveit::core::RobotModelConstPtr& robot_model,
     const moveit::core::JointModelGroup* joint_model_group,
@@ -130,8 +132,6 @@ std::vector<double> direction_constraint(
     double dt = 0.05,
     moveit::core::RobotState* arm_state = nullptr,
     const Eigen::Quaterniond* desired_ee_orientation = nullptr,
-    const bool change_joint6_allowed = false,
-    const bool change_link6_orientation_allowed = false,
-    const Eigen::Vector3d* controller_ee_reference = nullptr);
+    const bool change_link6_orientation_allowed = false);
 
 #endif

@@ -57,7 +57,6 @@ def generate_launch_description():
             moveit_config.robot_description_kinematics,
         ],
     )
-
     return LaunchDescription([
         robot_state_publisher,
         move_group_node,
