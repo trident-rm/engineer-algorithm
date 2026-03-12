@@ -540,6 +540,9 @@ private:
 
                 // 在 RViz 中显示参考位姿信息
                 visualize_reference_pose_info();
+
+                last_control_mode_ = control_mode;
+                return;
             }
 
             if (control_mode==TURN){
@@ -562,6 +565,8 @@ private:
                            up_direction_.x(), up_direction_.y(), up_direction_.z());
                 RCLCPP_INFO(LOGGER, "  normal direction: [%.3f, %.3f, %.3f]",
                            normal_direction_.x(), normal_direction_.y(), normal_direction_.z());
+                last_control_mode_ = control_mode;
+                return;
             }
 
             if (control_mode == ROLL) {
@@ -579,6 +584,8 @@ private:
                 RCLCPP_INFO(LOGGER, "ROLL mode entered:");
                 RCLCPP_INFO(LOGGER, "  roll_start EE: [%.3f, %.3f, %.3f]",
                            roll_start_pose_.position.x, roll_start_pose_.position.y, roll_start_pose_.position.z);
+                last_control_mode_ = control_mode;
+                return;
             }
 
             if (control_mode == RESET) {
@@ -711,15 +718,10 @@ private:
     }
     
     /**
-     * @brief 处理 UP 模式 — 调用 utils::direction_constraint（雅可比伪逆方案）
+     * @brief 处理 UP 模式
      *
      * 流程：
      *   controller FK → 投影到 e_hat 垂直平面 → 自适应阻尼 J⁺·v·dt → 角度增量 → 直接发送
-     *
-     * 相比旧的 computeCartesianPath+IK+状态机：
-     *   - 无 IK 多值解跳变（雅可比给出唯一连续解）
-     *   - 无状态机，每个控制周期独立计算
-     *   - 自适应阻尼处理奇异点，等比缩放保证关节限位
      */
     void handle_mode_up(
         const std::vector<double>& robo_arm_angles,
@@ -937,7 +939,6 @@ private:
      * @brief 处理 ROLL 模式（雅可比伪逆方案）
      * 
      * 与 UP 类似，但消除 e_hat 分量的同时允许绕 e_hat 轴旋转。
-     * 如果你想做纯平移（和UP一样），直接复用 handle_mode_up 即可。
      */
     void handle_mode_roll(
         const std::vector<double>& robo_arm_angles,

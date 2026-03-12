@@ -366,7 +366,7 @@ std::vector<double> direction_constraint(
         controller_state.getGlobalLinkTransform(end_effector_link).translation();
 
     // ── Step 2: FK(robo_arm) → current_ee ────────────────────────────────────
-    // 若外部传入已 update() 的 arm_state 则直接复用（每周期节省 1 次完整 FK）
+    // 若外部传入已 update() 的 arm_state 则直接复用
     std::unique_ptr<moveit::core::RobotState> local_state;
     if (!arm_state) {
         local_state = std::make_unique<moveit::core::RobotState>(robot_model);
@@ -387,7 +387,7 @@ std::vector<double> direction_constraint(
     double constrain_component = displacement.dot(constrain_direction_normalized);
     Eigen::Vector3d constrained_target = reference_position + (displacement - constrain_component * constrain_direction_normalized);
 
-    // ── Step 4: 速度方向 = current_ee → constrained_target，再去 constrain_direction 分量 ──
+    // ── Step 4: 速度方向
     // 平面内跟踪分量（去除 constrain_direction 分量，保证目标只在平面内）
     Eigen::Vector3d velocity = constrained_target - current_ee;
     velocity = velocity - velocity.dot(constrain_direction_normalized) * constrain_direction_normalized;
@@ -557,11 +557,25 @@ std::vector<double> direction_constraint(
     //   Δq_sync = k × (q_ctrl - q_arm) × dt
     // —— 当误差接近零时贡献极小（不干扰位置跟踪），
     //    当误差较大时提供恢复力，时间常数 = 1/k ≈ 3.3 s。
+    // 注意：当使用完整 6×n 雅可比时（有姿态控制），同步项必须投影到零空间，
+    // 否则会与 omega 朝向锁定项互相抵消，导致关节（尤其是腕关节）卡死不响应。
     {
         const double JOINT_SYNC_GAIN = 0.3;   // rad/s per rad error
-        for (size_t i = 0; i < robo_arm_angles.size() && i < static_cast<size_t>(delta_q.size()); ++i) {
+        int n = static_cast<int>(robo_arm_angles.size());
+        Eigen::VectorXd delta_q_sync = Eigen::VectorXd::Zero(n);
+        for (int i = 0; i < n; ++i) {
             double joint_err = controller_angles[i] - robo_arm_angles[i];
-            delta_q(static_cast<Eigen::Index>(i)) += JOINT_SYNC_GAIN * joint_err * dt;
+            delta_q_sync(i) = JOINT_SYNC_GAIN * joint_err * dt;
+        }
+
+        if (omega_active) {
+            // 有姿态控制时：将同步项投影到雅可比零空间，避免干扰主任务（位置+姿态）
+            // N = I - J⁺J，零空间投影矩阵
+            Eigen::MatrixXd N = Eigen::MatrixXd::Identity(n, n) - J_pinv * J;
+            delta_q += N * delta_q_sync;
+        } else {
+            // 纯位置控制时：直接叠加（原逻辑）
+            delta_q += delta_q_sync;
         }
     }
 
