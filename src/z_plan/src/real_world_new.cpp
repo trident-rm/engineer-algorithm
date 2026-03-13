@@ -542,6 +542,7 @@ private:
                 visualize_reference_pose_info();
 
                 last_control_mode_ = control_mode;
+                serial_node_ -> send_roboarm_with_controller(latest_torques_, convert_urdf_to_hardware(robo_arm_angles)); // 切换到 UP 模式时直接发送控制器角度，避免停顿
                 return;
             }
 
@@ -566,6 +567,7 @@ private:
                 RCLCPP_INFO(LOGGER, "  normal direction: [%.3f, %.3f, %.3f]",
                            normal_direction_.x(), normal_direction_.y(), normal_direction_.z());
                 last_control_mode_ = control_mode;
+                serial_node_ -> send_roboarm_with_controller(latest_torques_, convert_urdf_to_hardware(robo_arm_angles)); // 切换到 TURN 模式时直接发送控制器角度，避免停顿
                 return;
             }
 
@@ -585,6 +587,7 @@ private:
                 RCLCPP_INFO(LOGGER, "  roll_start EE: [%.3f, %.3f, %.3f]",
                            roll_start_pose_.position.x, roll_start_pose_.position.y, roll_start_pose_.position.z);
                 last_control_mode_ = control_mode;
+                serial_node_ -> send_roboarm_with_controller(latest_torques_, convert_urdf_to_hardware(robo_arm_angles)); // 切换到 ROLL 模式时直接发送控制器角度，避免停顿
                 return;
             }
 
