@@ -90,7 +90,7 @@ geometry_msgs::msg::Pose compute_target_pose_along_direction(
 Eigen::Vector3d compute_e_hat_direction(const std::vector<std::vector<double>>& path);
 
 /**
- * @brief  对控制器末端位置施加 e_hat 方向约束，用雅可比伪逆（阻尼最小二乘）求一步关节增量
+ * @brief  对控制器末端位置施加 e_hat 方向约束，并让末端朝向完全跟随 controller
  *
  * 算法（与 test_constraint.cpp::constrained_step() 一致）：
  *   1. FK(controller_angles)  → controller_ee
@@ -99,9 +99,9 @@ Eigen::Vector3d compute_e_hat_direction(const std::vector<std::vector<double>>& 
  *   4. velocity = constrained_target - current_ee（再次去掉 e_hat 分量，双重保险）
  *   5. 死区（< DEAD_ZONE）直接返回 robo_arm_angles（不动）
  *   6. 限速（velocity.norm() ≤ MAX_SPEED）
- *   7. J_linear = Jacobian 前3行；SVD 计算条件数
+ *   7. J = 完整 Jacobian (6×n)；SVD 计算条件数
  *   8. 自适应阻尼：cond ∈ [COND_LOW, COND_HIGH] → λ ∈ [λ_min, λ_max]
- *   9. J_pinv = Jᵀ(JJᵀ + λ²I)⁻¹；Δq = J_pinv · velocity · dt
+ *   9. J_pinv = Jᵀ(JJᵀ + λ²I)⁻¹；Δq = J_pinv · [velocity, omega] · dt
  *  10. 等比缩放 Δq（MAX_JOINT_DELTA = 0.1 rad/cycle）
  *  11. 关节限位裕度等比缩放
  *
@@ -117,6 +117,8 @@ Eigen::Vector3d compute_e_hat_direction(const std::vector<std::vector<double>>& 
  * @param  dt                      控制增益（等效时间步长），默认 0.05
  * @param  arm_state               可选：外部已 update() 的机械臂 RobotState；非 nullptr 时跳过内部 FK 重建，
  *                                 节省约 2/3 的重复 FK 开销（每周期在 control_callback 统一更新一次）
+ * @param  desired_ee_orientation  兼容参数（当前实现固定跟随 controller 朝向，不使用）
+ * @param  change_link6_orientation_allowed 兼容参数（当前实现固定跟随 controller 朝向，不使用）
  * @retval std::vector<double>     约束后一步目标关节角度（死区时返回当前角度，失败时返回空）
  */
 std::vector<double> direction_constraint(

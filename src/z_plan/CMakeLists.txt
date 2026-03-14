@@ -28,7 +28,7 @@ find_package(control_msgs REQUIRED)
 include_directories(include)
 
 # 添加工具库
-add_library(utils src/utils.cpp)
+add_library(utils SHARED src/utils.cpp)
 ament_target_dependencies(utils
   rclcpp
   moveit_msgs
@@ -38,17 +38,29 @@ ament_target_dependencies(utils
   moveit_core
 )
 target_link_libraries(utils pinocchio::pinocchio)
+install(TARGETS utils
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+ament_export_libraries(utils)
 
 if(serial_FOUND)
   message(STATUS "serial library found - building hardware targets")
 
-  add_library(usb_data src/usb_data.cpp)
+  add_library(usb_data SHARED src/usb_data.cpp)
   ament_target_dependencies(usb_data
     rclcpp
     moveit_msgs
     trajectory_msgs
     serial
   )
+  install(TARGETS usb_data
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+  )
+  ament_export_libraries(usb_data)
 else()
   message(WARNING "serial library NOT found - hardware targets (real_world, read_data) will not be built")
 endif()
@@ -144,17 +156,22 @@ ament_target_dependencies(test_constraint
 )
 
 # Test node for gravity compensation comparison (no hardware dependency)
-add_executable(test_gravity_comp
-  src/test_gravity_comp.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/generated/gravity_comp.c
-)
-target_link_libraries(test_gravity_comp utils pinocchio::pinocchio)
-ament_target_dependencies(test_gravity_comp
-  rclcpp
-  moveit_ros_planning_interface
-  moveit_msgs
-  moveit_core
-)
+set(GRAVITY_COMP_C_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/generated/gravity_comp.c)
+if(EXISTS ${GRAVITY_COMP_C_FILE})
+  add_executable(test_gravity_comp
+    src/test_gravity_comp.cpp
+    ${GRAVITY_COMP_C_FILE}
+  )
+  target_link_libraries(test_gravity_comp utils pinocchio::pinocchio)
+  ament_target_dependencies(test_gravity_comp
+    rclcpp
+    moveit_ros_planning_interface
+    moveit_msgs
+    moveit_core
+  )
+else()
+  message(STATUS "gravity_comp.c not found, skipping target: test_gravity_comp")
+endif()
 
 # Install executables
 set(_install_targets
@@ -162,26 +179,35 @@ set(_install_targets
   z_plan_movegroup
   z_plan_movegroup_robo_arm
   test_constraint
-  test_gravity_comp
 )
+if(TARGET test_gravity_comp)
+  list(APPEND _install_targets test_gravity_comp)
+endif()
 if(serial_FOUND)
   # Gravity compensation debug node (requires serial)
-  add_executable(gravity_comp_debug
-    src/gravity_comp_debug.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/generated/gravity_comp.c
-  )
-  target_link_libraries(gravity_comp_debug utils usb_data pinocchio::pinocchio)
-  ament_target_dependencies(gravity_comp_debug
-    rclcpp
-    sensor_msgs
-    moveit_ros_planning_interface
-    moveit_msgs
-    moveit_core
-    serial
-  )
+  if(EXISTS ${GRAVITY_COMP_C_FILE})
+    add_executable(gravity_comp_debug
+      src/gravity_comp_debug.cpp
+      ${GRAVITY_COMP_C_FILE}
+    )
+    target_link_libraries(gravity_comp_debug utils usb_data pinocchio::pinocchio)
+    ament_target_dependencies(gravity_comp_debug
+      rclcpp
+      sensor_msgs
+      moveit_ros_planning_interface
+      moveit_msgs
+      moveit_core
+      serial
+    )
+  else()
+    message(STATUS "gravity_comp.c not found, skipping target: gravity_comp_debug")
+  endif()
 
   list(APPEND _install_targets
-    gravity_comp_debug real_world real_world_new read_data)
+    real_world real_world_new read_data)
+  if(TARGET gravity_comp_debug)
+    list(APPEND _install_targets gravity_comp_debug)
+  endif()
 endif()
 
 install(TARGETS ${_install_targets}

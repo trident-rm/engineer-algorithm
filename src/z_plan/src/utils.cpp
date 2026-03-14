@@ -357,6 +357,10 @@ std::vector<double> direction_constraint(
     const Eigen::Quaterniond* desired_ee_orientation,
     const bool change_link6_orientation_allowed)
 {
+    // 兼容旧接口：当前实现始终“朝向完全跟随 controller”
+    (void)desired_ee_orientation;
+    (void)change_link6_orientation_allowed;
+
     // ── Step 1: FK(controller) → controller_ee ────────────────────────────────
     moveit::core::RobotState controller_state(robot_model);
     for (size_t i = 0; i < joint_names.size(); ++i)
@@ -382,10 +386,24 @@ std::vector<double> direction_constraint(
     // displacement 以模式切换时控制器 EE 位置（controller_ee_reference）为原点：
     //   切换瞬间 controller_ee == controller_ee_reference → displacement=0，避免跳变。
     // reference_position（机械臂切换时 EE）作为约束平面的空间原点。
+    // 
+    // 约束平面容差机制：允许在约束方向上有一定的自由度（tolerance），缓冲模式切换时的冲击
+    const double CONSTRAINT_TOLERANCE = 0.03;  // 30mm tolerance
     Eigen::Vector3d constrain_direction_normalized = constrain_direction.normalized();
     Eigen::Vector3d displacement = controller_ee - controller_ee_reference;
     double constrain_component = displacement.dot(constrain_direction_normalized);
-    Eigen::Vector3d constrained_target = reference_position + (displacement - constrain_component * constrain_direction_normalized);
+    
+    Eigen::Vector3d constrained_target;
+    if (std::abs(constrain_component) > CONSTRAINT_TOLERANCE) {
+        // 超过 tolerance：应用约束，但保留 tolerance 范围内的移动
+        double sign = (constrain_component > 0) ? 1.0 : -1.0;
+        double constrain_excess = std::abs(constrain_component) - CONSTRAINT_TOLERANCE;
+        constrained_target = reference_position + 
+                           (displacement - (constrain_component - sign * constrain_excess) * constrain_direction_normalized);
+    } else {
+        // 在 tolerance 范围内：直接跟随controller，不施加约束
+        constrained_target = reference_position + displacement;
+    }
 
     // ── Step 4: 速度方向
     // 平面内跟踪分量（去除 constrain_direction 分量，保证目标只在平面内）
@@ -395,101 +413,36 @@ std::vector<double> direction_constraint(
     // 平面漂移修正：若 current_ee 因雅可比数值误差偏出约束平面，
     // 则沿 constrain_direction 方向施加回平面弹簧力（该分量不参与下方投影，直接叠加）。
     // gain=2.0：每周期消除 ~18% 漂移量，比跟踪增益稍快，可在数个周期内将 EE 拉回平面。
+    /*
     double drift_along_constraint = (current_ee - reference_position).dot(constrain_direction_normalized);
     const double DRIFT_CORRECTION_GAIN = 2.0;
     velocity -= DRIFT_CORRECTION_GAIN * drift_along_constraint * constrain_direction_normalized;
+    */
 
-    // ── 姿态误差计算 ─────────────────────────────────────────────────────────
-    // UP   模式（desired_ee_orientation!=null, !change_link6_orientation_allowed）：完全锁定朝向
-    // ROLL 模式（desired_ee_orientation!=null,  change_link6_orientation_allowed）：z 轴锁定，绕 z 跟随控制器
-    // TURN 模式（desired_ee_orientation==null,  change_link6_orientation_allowed）：全自由度跟随控制器朝向
-    // 纯位置  （desired_ee_orientation==null, !change_link6_orientation_allowed）：omega=0，退化为纯位置控制
-    Eigen::Vector3d omega = Eigen::Vector3d::Zero();
-    const bool use_orientation_control = (desired_ee_orientation != nullptr);
-    // TURN 模式：desired_ee_orientation==null 但仍需 omega，单独标记
-    bool omega_active = use_orientation_control;
+    // ── Step 4b: 朝向完全跟随 controller（世界坐标角速度误差）────────────────
+    Eigen::Matrix3d current_rot =
+        arm_state->getGlobalLinkTransform(end_effector_link).rotation();
+    Eigen::Quaterniond current_q(current_rot);
 
-    if (use_orientation_control) {
-        Eigen::Matrix3d current_rot =
-            arm_state->getGlobalLinkTransform(end_effector_link).rotation();
-        Eigen::Quaterniond current_q(current_rot);
+    Eigen::Matrix3d ctrl_rot =
+        controller_state.getGlobalLinkTransform(end_effector_link).rotation();
+    Eigen::Quaterniond ctrl_q(ctrl_rot);
 
-        if (!change_link6_orientation_allowed) {
-            // ── UP：完全锁定朝向 ──────────────────────────────────────────────
-            // ω = 2 · vec( q_des · q_cur⁻¹ )，世界坐标系角速度
-            Eigen::Quaterniond q_err = (*desired_ee_orientation) * current_q.inverse();
-            if (q_err.w() < 0) q_err.coeffs() = -q_err.coeffs();   // 取短弧
-            omega = 2.0 * q_err.vec();
+    Eigen::Quaterniond q_err = ctrl_q * current_q.inverse();
+    if (q_err.w() < 0) q_err.coeffs() = -q_err.coeffs();  // 取短弧
+    Eigen::Vector3d omega = 2.0 * q_err.vec();
 
-        } else {
-            // ── ROLL：z 轴锁定，绕 z 跟随控制器 ─────────────────────────────
-            // 参考 z 轴（进入 ROLL 时记录，在世界坐标系中固定不变）
-            Eigen::Vector3d z_ref =
-                desired_ee_orientation->toRotationMatrix().col(2);
-
-            // 控制器末端 x 轴在世界坐标系中的方向
-            Eigen::Matrix3d ctrl_rot =
-                controller_state.getGlobalLinkTransform(end_effector_link).rotation();
-            Eigen::Vector3d ctrl_x = ctrl_rot.col(0);
-
-            // 将控制器 x 轴投影到 z_ref 垂直平面，得到"绕 z 的旋转分量"
-            Eigen::Vector3d target_x = ctrl_x - ctrl_x.dot(z_ref) * z_ref;
-            if (target_x.norm() < 1e-6) {
-                // 控制器 x 轴与 z_ref 平行（退化），保持参考 x 轴
-                target_x = desired_ee_orientation->toRotationMatrix().col(0);
-            } else {
-                target_x.normalize();
-            }
-            Eigen::Vector3d target_y = z_ref.cross(target_x).normalized();
-
-            // 目标旋转矩阵：z 轴固定 + 从控制器提取的绕 z 旋转
-            Eigen::Matrix3d target_rot;
-            target_rot.col(0) = target_x;
-            target_rot.col(1) = target_y;
-            target_rot.col(2) = z_ref;
-
-            Eigen::Quaterniond q_err =
-                Eigen::Quaterniond(target_rot) * current_q.inverse();
-            if (q_err.w() < 0) q_err.coeffs() = -q_err.coeffs();
-            omega = 2.0 * q_err.vec();
-        }
-
-        // 限制角速度幅值（max 1.0 rad/s）
-        const double MAX_ANGULAR_SPEED = 1.0;
-        double omega_norm = omega.norm();
-        if (omega_norm > MAX_ANGULAR_SPEED)
-            omega *= (MAX_ANGULAR_SPEED / omega_norm);
-
-    } else if (change_link6_orientation_allowed) {
-        // ── TURN：全自由度跟随控制器朝向 ─────────────────────────────────────
-        // desired_ee_orientation==null 表示不锁定固定参考朝向，直接跟随控制器当前 EE 旋转。
-        // 使用完整 6×n Jacobian，所有关节（包括倒数第二个）均参与求解，朝向可随控制器自由变化。
-        Eigen::Matrix3d current_rot =
-            arm_state->getGlobalLinkTransform(end_effector_link).rotation();
-        Eigen::Quaterniond current_q(current_rot);
-
-        Eigen::Matrix3d ctrl_rot =
-            controller_state.getGlobalLinkTransform(end_effector_link).rotation();
-        Eigen::Quaterniond ctrl_q(ctrl_rot);
-
-        Eigen::Quaterniond q_err = ctrl_q * current_q.inverse();
-        if (q_err.w() < 0) q_err.coeffs() = -q_err.coeffs();   // 取短弧
-        omega = 2.0 * q_err.vec();
-
-        // 限制角速度幅值（max 1.0 rad/s）
-        const double MAX_ANGULAR_SPEED = 1.0;
-        double omega_norm = omega.norm();
-        if (omega_norm > MAX_ANGULAR_SPEED)
-            omega *= (MAX_ANGULAR_SPEED / omega_norm);
-
-        omega_active = true;
+    const double MAX_ANGULAR_SPEED = 1.0;  // rad/s
+    double omega_norm = omega.norm();
+    if (omega_norm > MAX_ANGULAR_SPEED) {
+        omega *= (MAX_ANGULAR_SPEED / omega_norm);
     }
 
-    // ── Step 5: 死区（位置 < 0.5 mm 且姿态 < 0.01 rad 时不动）──────────────
+    // ── Step 5: 死区（位置+朝向都很小时不动）────────────────────────────────
     double position_error = velocity.norm();
-    double orient_error   = omega.norm();
-    const double DEAD_ZONE        = 0.0005;   // m
-    const double ORIENT_DEAD_ZONE = 0.01;     // rad（约 0.6°）
+    double orient_error = omega.norm();
+    const double DEAD_ZONE = 0.0005;   // m
+    const double ORIENT_DEAD_ZONE = 0.01;  // rad
     if (position_error < DEAD_ZONE && orient_error < ORIENT_DEAD_ZONE) {
         return robo_arm_angles;
     }
@@ -500,7 +453,7 @@ std::vector<double> direction_constraint(
         velocity *= (MAX_SPEED / position_error);
     }
 
-    // ── Step 7: 雅可比矩阵；有姿态控制时使用完整 6 × n ──────────────────────
+    // ── Step 7: 雅可比矩阵（位置+朝向，使用完整 6 × n）──────────────────────
     Eigen::MatrixXd full_jacobian;
     Eigen::Vector3d ref_pt(0.0, 0.0, 0.0);
     if (!arm_state->getJacobian(
@@ -511,16 +464,9 @@ std::vector<double> direction_constraint(
         return {};
     }
 
-    Eigen::MatrixXd J;
-    Eigen::VectorXd vel_cmd;
-    if (omega_active) {
-        J = full_jacobian;           // 6 × n（线速度 + 角速度）
-        vel_cmd.resize(6);
-        vel_cmd << velocity, omega;
-    } else {
-        J = full_jacobian.topRows(3);   // 3 × n（仅线速度，退化为原逻辑）
-        vel_cmd = velocity;
-    }
+    Eigen::MatrixXd J = full_jacobian;   // 6 × n
+    Eigen::VectorXd vel_cmd(6);
+    vel_cmd << velocity, omega;
 
     // ── Step 8: SVD → 条件数 → 自适应阻尼 ───────────────────────────────────
     Eigen::JacobiSVD<Eigen::MatrixXd> svd(J);
@@ -550,15 +496,7 @@ std::vector<double> direction_constraint(
     Eigen::MatrixXd J_pinv = J.transpose() * JJt.inverse();   // n × jrows
     Eigen::VectorXd delta_q = J_pinv * vel_cmd * dt;
 
-    // ── Step 9b: 关节空间牵引（防止雅可比累积漂移导致失控）──────────────────
-    // 雅可比积分每周期存在微小误差，长期运行后机械臂关节角会偏离控制器关节角，
-    // 最终陷入奇异点或关节限位无法恢复。
-    // 以小增益 k（单位 rad/s/rad）叠加一个"弹簧项"将关节角拉回控制器附近：
-    //   Δq_sync = k × (q_ctrl - q_arm) × dt
-    // —— 当误差接近零时贡献极小（不干扰位置跟踪），
-    //    当误差较大时提供恢复力，时间常数 = 1/k ≈ 3.3 s。
-    // 注意：当使用完整 6×n 雅可比时（有姿态控制），同步项必须投影到零空间，
-    // 否则会与 omega 朝向锁定项互相抵消，导致关节（尤其是腕关节）卡死不响应。
+    // ── Step 9b: 关节空间牵引（投影到零空间，避免干扰主任务）────────────────
     {
         const double JOINT_SYNC_GAIN = 0.3;   // rad/s per rad error
         int n = static_cast<int>(robo_arm_angles.size());
@@ -568,15 +506,8 @@ std::vector<double> direction_constraint(
             delta_q_sync(i) = JOINT_SYNC_GAIN * joint_err * dt;
         }
 
-        if (omega_active) {
-            // 有姿态控制时：将同步项投影到雅可比零空间，避免干扰主任务（位置+姿态）
-            // N = I - J⁺J，零空间投影矩阵
-            Eigen::MatrixXd N = Eigen::MatrixXd::Identity(n, n) - J_pinv * J;
-            delta_q += N * delta_q_sync;
-        } else {
-            // 纯位置控制时：直接叠加（原逻辑）
-            delta_q += delta_q_sync;
-        }
+        Eigen::MatrixXd N = Eigen::MatrixXd::Identity(n, n) - J_pinv * J;
+        delta_q += N * delta_q_sync;
     }
 
     // ── Step 10: 关节角变化量等比缩放（硬限幅 0.1 rad/cycle）────────────────

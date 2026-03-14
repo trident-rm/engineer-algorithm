@@ -44,8 +44,6 @@ enum ControlMode {
     RESET = 4, 
 };
 
-// UP模式现在使用雅可比伪逆方案，不再需要状态机
-
 /**
  * @brief 机械臂实时控制器类
  * 
@@ -168,7 +166,7 @@ public:
     }
     
     /**
-     * @brief 启动控制循环（50ms 定时器）
+     * @brief 启动控制循环（20ms 定时器）
      */
     void start_control_loop() {
         control_timer_ = node_->create_wall_timer(
@@ -257,43 +255,57 @@ public:
     /**
      * @brief 可视化坐标系方向
      */
-    void visualize_ehat_direction(const Eigen::Vector3d& position) {
-        // 显示 e_hat 方向（红色箭头）
-        Eigen::Vector3d e_hat_end = position + e_hat_direction_ * 0.2;
+    /**
+     * @brief 可视化方向向量及其垂直约束平面（通用版本）
+     * @param position 平面中心位置
+     * @param direction 约束方向向量
+     * @param color 箭头颜色
+     * @param label 标签文字
+     */
+    void visualize_direction_with_constraint_plane(
+        const Eigen::Vector3d& position,
+        const Eigen::Vector3d& direction,
+        const rviz_visual_tools::Colors& color = rviz_visual_tools::RED,
+        const std::string& label = "constraint") {
+        
+        // 显示方向箭头
+        Eigen::Vector3d arrow_end = position + direction * 0.2;
         visual_tools_->publishArrow(
             visual_tools_->convertPoint(position),
-            visual_tools_->convertPoint(e_hat_end),
-            rviz_visual_tools::RED, rviz_visual_tools::MEDIUM);
+            visual_tools_->convertPoint(arrow_end),
+            color, rviz_visual_tools::MEDIUM);
         
         geometry_msgs::msg::Pose text_pose;
-        text_pose.position = visual_tools_->convertPoint(e_hat_end);
+        text_pose.position = visual_tools_->convertPoint(arrow_end);
         text_pose.orientation.w = 1.0;
         visual_tools_->publishText(
             text_pose,
-            "e_hat", rviz_visual_tools::RED, rviz_visual_tools::SMALL, false);
+            label, color, rviz_visual_tools::SMALL, false);
         
-        // 画出与 ehat 垂直的平面（末端允许运动的平面）
-        visualize_perpendicular_plane(position);
+        // 画出与方向垂直的约束平面
+        visualize_perpendicular_plane(position, direction);
     }
     
     /**
-     * @brief 可视化与 ehat 垂直的平面（末端允许运动的平面）
+     * @brief 可视化与指定方向垂直的平面（通用版本）
+     * @param position 平面中心位置
+     * @param direction 约束方向向量
      */
-    void visualize_perpendicular_plane(const Eigen::Vector3d& position) {
-        // 计算两个与 e_hat 垂直的正交向量
-        Eigen::Vector3d e_hat_normalized = e_hat_direction_.normalized();
+    void visualize_perpendicular_plane(const Eigen::Vector3d& position, const Eigen::Vector3d& direction) {
+        // 计算两个与方向垂直的正交向量
+        Eigen::Vector3d dir_normalized = direction.normalized();
         
-        // 找一个不与 e_hat 平行的向量
+        // 找一个不与方向平行的向量
         Eigen::Vector3d arbitrary;
-        if (std::abs(e_hat_normalized.x()) < 0.9) {
+        if (std::abs(dir_normalized.x()) < 0.9) {
             arbitrary = Eigen::Vector3d(1, 0, 0);
         } else {
             arbitrary = Eigen::Vector3d(0, 1, 0);
         }
         
         // 通过叉乘得到两个正交向量
-        Eigen::Vector3d u = e_hat_normalized.cross(arbitrary).normalized();
-        Eigen::Vector3d v = e_hat_normalized.cross(u).normalized();
+        Eigen::Vector3d u = dir_normalized.cross(arbitrary).normalized();
+        Eigen::Vector3d v = dir_normalized.cross(u).normalized();
         
         // 创建一个圆形平面
         visualization_msgs::msg::Marker plane_marker;
@@ -374,6 +386,13 @@ public:
         }
         
         marker_pub_->publish(disk_marker);
+    }
+    
+    /**
+     * @brief 可视化与 e_hat 垂直的平面（向后兼容）
+     */
+    void visualize_perpendicular_plane(const Eigen::Vector3d& position) {
+        visualize_perpendicular_plane(position, e_hat_direction_);
     }
 
     void visualize_up_direction(const Eigen::Vector3d& position) {
@@ -542,15 +561,16 @@ private:
                 visualize_reference_pose_info();
 
                 last_control_mode_ = control_mode;
-                serial_node_ -> send_roboarm_with_controller(latest_torques_, convert_urdf_to_hardware(robo_arm_angles)); // 切换到 UP 模式时直接发送控制器角度，避免停顿
-                return;
+                mode_just_switched_ = true;  // 标记模式刚切换，下一帧才应用约束
             }
 
             if (control_mode==TURN){
-                up_end_pose_ = compute_end_effector_pose(robo_arm_angles);
-                up_direction_ = (Eigen::Vector3d(up_end_pose_.position.x, up_end_pose_.position.y, up_end_pose_.position.z) - 
+                // 在更新reference_pose_前，先用当前pose计算up_direction
+                geometry_msgs::msg::Pose new_pose = compute_end_effector_pose(robo_arm_angles);
+                up_direction_ = (Eigen::Vector3d(new_pose.position.x, new_pose.position.y, new_pose.position.z) - 
                                  Eigen::Vector3d(reference_pose_.position.x, reference_pose_.position.y, reference_pose_.position.z)).normalized();
                 normal_direction_ = e_hat_direction_.cross(up_direction_).normalized();
+                reference_pose_ = new_pose;
 
                 // 记录切换瞬间控制器 EE 位置
                 {
@@ -567,12 +587,11 @@ private:
                 RCLCPP_INFO(LOGGER, "  normal direction: [%.3f, %.3f, %.3f]",
                            normal_direction_.x(), normal_direction_.y(), normal_direction_.z());
                 last_control_mode_ = control_mode;
-                serial_node_ -> send_roboarm_with_controller(latest_torques_, convert_urdf_to_hardware(robo_arm_angles)); // 切换到 TURN 模式时直接发送控制器角度，避免停顿
-                return;
+                mode_just_switched_ = true;  // 标记模式刚切换，下一帧才应用约束
             }
 
             if (control_mode == ROLL) {
-                roll_start_pose_ = compute_end_effector_pose(robo_arm_angles);
+                reference_pose_ = compute_end_effector_pose(robo_arm_angles);
 
                 // 记录切换瞬间控制器 EE 位置
                 {
@@ -585,10 +604,9 @@ private:
 
                 RCLCPP_INFO(LOGGER, "ROLL mode entered:");
                 RCLCPP_INFO(LOGGER, "  roll_start EE: [%.3f, %.3f, %.3f]",
-                           roll_start_pose_.position.x, roll_start_pose_.position.y, roll_start_pose_.position.z);
+                           reference_pose_.position.x, reference_pose_.position.y, reference_pose_.position.z);
                 last_control_mode_ = control_mode;
-                serial_node_ -> send_roboarm_with_controller(latest_torques_, convert_urdf_to_hardware(robo_arm_angles)); // 切换到 ROLL 模式时直接发送控制器角度，避免停顿
-                return;
+                mode_just_switched_ = true;  // 标记模式刚切换，下一帧才应用约束
             }
 
             if (control_mode == RESET) {
@@ -671,34 +689,53 @@ private:
                     Eigen::Vector3d ref_pos(reference_pose_.position.x,
                                            reference_pose_.position.y,
                                            reference_pose_.position.z);
-                    visualize_ehat_direction(ref_pos);
+                    visualize_direction_with_constraint_plane(ref_pos, e_hat_direction_, 
+                                                             rviz_visual_tools::RED, "e_hat");
                 }
                 visualize_reference_pose_info();  // 持续显示参考信息
-                handle_mode_up(robo_arm_angles, controller_angles);
-                //plan_and_execute_random_trajectory_in_plane(robo_arm_angles);
+                // 若刚切换模式，跳过第一帧约束计算，只发送当前角度
+                if (!mode_just_switched_) {
+                    handle_mode_up(robo_arm_angles, controller_angles);
+                } else {
+                    // 第一帧：发送当前角度，不应用约束
+                    serial_node_->send_roboarm_with_controller(latest_torques_, convert_urdf_to_hardware(robo_arm_angles));
+                    mode_just_switched_ = false;
+                }
                 break;
             case TURN: {
                 // TURN 约束方向是 normal_direction，平面固定在进入 TURN 时的位置
-                Eigen::Vector3d turn_ref_pos(up_end_pose_.position.x,
-                                             up_end_pose_.position.y,
-                                             up_end_pose_.position.z);
-                // 临时将 e_hat_direction_ 替换为 normal_direction_ 来复用平面绘制函数
-                Eigen::Vector3d saved_e_hat = e_hat_direction_;
-                e_hat_direction_ = normal_direction_;
-                visualize_ehat_direction(turn_ref_pos);  // 画垂直于 normal 的约束平面
-                e_hat_direction_ = saved_e_hat;
+                Eigen::Vector3d turn_ref_pos(reference_pose_.position.x,
+                                             reference_pose_.position.y,
+                                             reference_pose_.position.z);
+                // 直接传递 normal_direction，不修改成员变量
+                visualize_direction_with_constraint_plane(turn_ref_pos, normal_direction_, 
+                                                         rviz_visual_tools::BLUE, "normal");
                 visualize_up_direction(ee_position);
-                visualize_normal_direction(ee_position);
-                handle_mode_turn(robo_arm_angles, controller_angles);
+                // 若刚切换模式，跳过第一帧约束计算，只发送当前角度
+                if (!mode_just_switched_) {
+                    handle_mode_turn(robo_arm_angles, controller_angles);
+                } else {
+                    // 第一帧：发送当前角度，不应用约束
+                    serial_node_->send_roboarm_with_controller(latest_torques_, convert_urdf_to_hardware(robo_arm_angles));
+                    mode_just_switched_ = false;
+                }
                 break;
             }
             case ROLL: {
                 // ROLL 约束方向是 e_hat，平面固定在进入 ROLL 时的位置
-                Eigen::Vector3d roll_ref_pos(roll_start_pose_.position.x,
-                                             roll_start_pose_.position.y,
-                                             roll_start_pose_.position.z);
-                visualize_ehat_direction(roll_ref_pos);
-                handle_mode_roll(robo_arm_angles, controller_angles);
+                Eigen::Vector3d roll_ref_pos(reference_pose_.position.x,
+                                             reference_pose_.position.y,
+                                             reference_pose_.position.z);
+                visualize_direction_with_constraint_plane(roll_ref_pos, e_hat_direction_, 
+                                                         rviz_visual_tools::RED, "e_hat");
+                // 若刚切换模式，跳过第一帧约束计算，只发送当前角度
+                if (!mode_just_switched_) {
+                    handle_mode_roll(robo_arm_angles, controller_angles);
+                } else {
+                    // 第一帧：发送当前角度，不应用约束
+                    serial_node_->send_roboarm_with_controller(latest_torques_, convert_urdf_to_hardware(robo_arm_angles));
+                    mode_just_switched_ = false;
+                }
                 break;
             }
             case RESET:
@@ -803,17 +840,17 @@ private:
     void handle_mode_turn(const std::vector<double>& robo_arm_angles, const std::vector<double>& controller_angles) {
         if (!reference_pose_initialized_) return;
 
-        // TURN 模式以切换时的末端位置（up_end_pose_）为参考点
+        // TURN 模式以切换时的末端位置（reference_pose_）为参考点
         Eigen::Vector3d reference_position(
-            up_end_pose_.position.x,
-            up_end_pose_.position.y,
-            up_end_pose_.position.z);
+            reference_pose_.position.x,
+            reference_pose_.position.y,
+            reference_pose_.position.z);
 
         Eigen::Quaterniond ref_orient(
-            up_end_pose_.orientation.w,
-            up_end_pose_.orientation.x,
-            up_end_pose_.orientation.y,
-            up_end_pose_.orientation.z);
+            reference_pose_.orientation.w,
+            reference_pose_.orientation.x,
+            reference_pose_.orientation.y,
+            reference_pose_.orientation.z);
         std::vector<double> target_angles = direction_constraint(
             robo_arm_angles,
             controller_angles,
@@ -949,17 +986,17 @@ private:
     {
         if (!reference_pose_initialized_) return;
 
-        // ROLL 模式以切换时的末端位置（roll_start_pose_）为参考点
+        // ROLL 模式以切换时的末端位置（reference_pose_）为参考点
         Eigen::Vector3d reference_position(
-            roll_start_pose_.position.x,
-            roll_start_pose_.position.y,
-            roll_start_pose_.position.z);
+            reference_pose_.position.x,
+            reference_pose_.position.y,
+            reference_pose_.position.z);
 
         Eigen::Quaterniond ref_orient(
-            roll_start_pose_.orientation.w,
-            roll_start_pose_.orientation.x,
-            roll_start_pose_.orientation.y,
-            roll_start_pose_.orientation.z);
+            reference_pose_.orientation.w,
+            reference_pose_.orientation.x,
+            reference_pose_.orientation.y,
+            reference_pose_.orientation.z);
         std::vector<double> target_angles = direction_constraint(
             robo_arm_angles,
             controller_angles,
@@ -1173,6 +1210,9 @@ private:
     std::string end_effector_link_;
     std::vector<std::string> joint_names_;
     
+    // 模式切换标志（第一帧跳过约束计算）
+    bool mode_just_switched_ = false;
+    
     AngleFilter robo_filter_;
     AngleFilter controller_filter_;
 
@@ -1198,10 +1238,7 @@ private:
     geometry_msgs::msg::Pose reference_pose_;
     bool reference_pose_initialized_ = false;
     
-    //UP结束时的pose
-    geometry_msgs::msg::Pose up_end_pose_;
-    //ROLL开始时的pose
-    geometry_msgs::msg::Pose roll_start_pose_;
+
     // 模式切换瞬间控制器末端 EE 位置（位移原点，避免切换跳变）
     Eigen::Vector3d controller_ee_at_mode_start_{0, 0, 0};
 
