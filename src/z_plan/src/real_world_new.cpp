@@ -351,7 +351,7 @@ public:
         disk_marker.color.r = 1.0;
         disk_marker.color.g = 0.7;
         disk_marker.color.b = 0.0;
-        disk_marker.color.a = 0.3;  // 半透明
+        disk_marker.color.a = 1; 
         disk_marker.lifetime = rclcpp::Duration(0, 0);
         
         // 创建扇形三角形来填充圆盘
@@ -388,12 +388,7 @@ public:
         marker_pub_->publish(disk_marker);
     }
     
-    /**
-     * @brief 可视化与 e_hat 垂直的平面（向后兼容）
-     */
-    void visualize_perpendicular_plane(const Eigen::Vector3d& position) {
-        visualize_perpendicular_plane(position, e_hat_direction_);
-    }
+
 
     void visualize_up_direction(const Eigen::Vector3d& position) {
         Eigen::Vector3d up_end = position + up_direction_ * 0.2;

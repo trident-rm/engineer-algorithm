@@ -23,6 +23,7 @@ find_package(tf2_eigen REQUIRED)
 find_package(pinocchio REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(control_msgs REQUIRED)
+find_package(interactive_markers REQUIRED)
 
 # Include directories
 include_directories(include)
@@ -155,6 +156,20 @@ ament_target_dependencies(test_constraint
   moveit_core
 )
 
+# RViz-based simulation control node (no hardware dependency)
+add_executable(rviz_simulation src/rviz_simulation.cpp)
+target_link_libraries(rviz_simulation utils pinocchio::pinocchio)
+ament_target_dependencies(rviz_simulation
+  rclcpp
+  geometry_msgs
+  moveit_ros_planning_interface
+  moveit_visual_tools
+  moveit_msgs
+  moveit_core
+  interactive_markers
+  std_srvs
+)
+
 # Test node for gravity compensation comparison (no hardware dependency)
 set(GRAVITY_COMP_C_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/generated/gravity_comp.c)
 if(EXISTS ${GRAVITY_COMP_C_FILE})
@@ -179,6 +194,7 @@ set(_install_targets
   z_plan_movegroup
   z_plan_movegroup_robo_arm
   test_constraint
+  rviz_simulation
 )
 if(TARGET test_gravity_comp)
   list(APPEND _install_targets test_gravity_comp)

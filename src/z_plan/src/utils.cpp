@@ -408,16 +408,16 @@ std::vector<double> direction_constraint(
     // ── Step 4: 速度方向
     // 平面内跟踪分量（去除 constrain_direction 分量，保证目标只在平面内）
     Eigen::Vector3d velocity = constrained_target - current_ee;
-    velocity = velocity - velocity.dot(constrain_direction_normalized) * constrain_direction_normalized;
+    //velocity = velocity - velocity.dot(constrain_direction_normalized) * constrain_direction_normalized;
 
     // 平面漂移修正：若 current_ee 因雅可比数值误差偏出约束平面，
     // 则沿 constrain_direction 方向施加回平面弹簧力（该分量不参与下方投影，直接叠加）。
     // gain=2.0：每周期消除 ~18% 漂移量，比跟踪增益稍快，可在数个周期内将 EE 拉回平面。
-    /*
+    
     double drift_along_constraint = (current_ee - reference_position).dot(constrain_direction_normalized);
     const double DRIFT_CORRECTION_GAIN = 2.0;
     velocity -= DRIFT_CORRECTION_GAIN * drift_along_constraint * constrain_direction_normalized;
-    */
+    
 
     // ── Step 4b: 朝向完全跟随 controller（世界坐标角速度误差）────────────────
     Eigen::Matrix3d current_rot =
