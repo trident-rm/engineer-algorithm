@@ -357,9 +357,8 @@ std::vector<double> direction_constraint(
     const Eigen::Quaterniond* desired_ee_orientation,
     const bool change_link6_orientation_allowed)
 {
-    // 兼容旧接口：当前实现始终“朝向完全跟随 controller”
-    (void)desired_ee_orientation;
-    (void)change_link6_orientation_allowed;
+    //(void)desired_ee_orientation;
+    //(void)change_link6_orientation_allowed;
 
     // ── Step 1: FK(controller) → controller_ee ────────────────────────────────
     moveit::core::RobotState controller_state(robot_model);
@@ -418,7 +417,78 @@ std::vector<double> direction_constraint(
     const double DRIFT_CORRECTION_GAIN = 2.0;
     velocity -= DRIFT_CORRECTION_GAIN * drift_along_constraint * constrain_direction_normalized;
     
+    //── Step 4B: 朝向限制
+    Eigen::Vector3d omega = Eigen::Vector3d::Zero();
+    const bool use_orientation_control = (desired_ee_orientation != nullptr);
+    Eigen::Matrix3d current_rot = arm_state->getGlobalLinkTransform(end_effector_link).rotation();
+    Eigen::Quaterniond current_q(current_rot);
 
+    if (use_orientation_control) {
+        if (!change_link6_orientation_allowed) {
+            // ── UP：完全锁定朝向 ──────────────────────────────────────────────
+            Eigen::Quaterniond q_err = (*desired_ee_orientation) * current_q.inverse();
+            if (q_err.w() < 0) q_err.coeffs() = -q_err.coeffs();   // 取短弧
+            omega = 2.0 * q_err.vec();
+            
+            // UP 模式角速度限幅
+            const double MAX_ANGULAR_SPEED_UP = 0.5;  // rad/s (UP模式更保守)
+            double omega_norm = omega.norm();
+            if (omega_norm > MAX_ANGULAR_SPEED_UP) {
+                omega *= (MAX_ANGULAR_SPEED_UP / omega_norm);
+            }
+        } else {
+            // ── ROLL：z 轴锁定，绕 z 跟随控制器 ──────────────────────────────
+            // 参考 z 轴（进入 ROLL 时记录，在世界坐标系中固定不变）
+            Eigen::Vector3d z_ref = desired_ee_orientation->toRotationMatrix().col(2);
+
+            // 控制器末端 x 轴在世界坐标系中的方向
+            Eigen::Matrix3d ctrl_rot = controller_state.getGlobalLinkTransform(end_effector_link).rotation();
+            Eigen::Vector3d ctrl_x = ctrl_rot.col(0);
+
+            // 将控制器 x 轴投影到 z_ref 垂直平面，得到"绕 z 的旋转分量"
+            Eigen::Vector3d target_x = ctrl_x - ctrl_x.dot(z_ref) * z_ref;
+            if (target_x.norm() < 1e-6) {
+                target_x = desired_ee_orientation->toRotationMatrix().col(0);
+            } else {
+                target_x.normalize();
+            }
+            Eigen::Vector3d target_y = z_ref.cross(target_x).normalized();
+
+            // 目标旋转矩阵：z 轴固定 + 从控制器提取的绕 z 旋转
+            Eigen::Matrix3d target_rot;
+            target_rot.col(0) = target_x;
+            target_rot.col(1) = target_y;
+            target_rot.col(2) = z_ref;
+
+            Eigen::Quaterniond q_err = Eigen::Quaterniond(target_rot) * current_q.inverse();
+            if (q_err.w() < 0) q_err.coeffs() = -q_err.coeffs();
+            omega = 2.0 * q_err.vec();
+
+            // ROLL 模式角速度限幅
+            const double MAX_ANGULAR_SPEED = 1.0;  // rad/s
+            double omega_norm = omega.norm();
+            if (omega_norm > MAX_ANGULAR_SPEED) {
+                omega *= (MAX_ANGULAR_SPEED / omega_norm);
+            }
+        }
+    } else {
+        //TURN 模式：完全跟随控制器朝向
+        Eigen::Matrix3d ctrl_rot = controller_state.getGlobalLinkTransform(end_effector_link).rotation();
+        Eigen::Quaterniond ctrl_q(ctrl_rot);
+        Eigen::Quaterniond q_err = ctrl_q * current_q.inverse();
+        if (q_err.w() < 0) q_err.coeffs() = -q_err.coeffs();  // 取短弧
+        omega = 2.0 * q_err.vec();
+        
+        // TURN 模式角速度限幅
+        const double MAX_ANGULAR_SPEED = 1.0;  // rad/s
+        double omega_norm = omega.norm();
+        if (omega_norm > MAX_ANGULAR_SPEED) {
+            omega *= (MAX_ANGULAR_SPEED / omega_norm);
+        }
+    }
+
+
+    /*
     // ── Step 4b: 朝向完全跟随 controller（世界坐标角速度误差）────────────────
     Eigen::Matrix3d current_rot =
         arm_state->getGlobalLinkTransform(end_effector_link).rotation();
@@ -437,7 +507,8 @@ std::vector<double> direction_constraint(
     if (omega_norm > MAX_ANGULAR_SPEED) {
         omega *= (MAX_ANGULAR_SPEED / omega_norm);
     }
-
+    */
+   
     // ── Step 5: 死区（位置+朝向都很小时不动）────────────────────────────────
     double position_error = velocity.norm();
     double orient_error = omega.norm();
@@ -559,3 +630,237 @@ std::vector<double> direction_constraint(
 
     return result;
 }
+
+
+
+
+/* 
+direction_constraint版本
+
+std::vector<double> direction_constraint(
+    const std::vector<double>& robo_arm_angles,
+    const std::vector<double>& controller_angles,
+    const Eigen::Vector3d& reference_position,
+    const Eigen::Vector3d& constrain_direction,
+    const moveit::core::RobotModelConstPtr& robot_model,
+    const moveit::core::JointModelGroup* joint_model_group,
+    const std::string& end_effector_link,
+    const std::vector<std::string>& joint_names,
+    double dt,
+    moveit::core::RobotState* arm_state,
+    const Eigen::Quaterniond* desired_ee_orientation,
+    const bool change_joint6_allowed,
+    const bool change_link6_orientation_allowed,
+    const Eigen::Vector3d* controller_ee_reference)
+{
+    // ── Step 1: FK(controller) → controller_ee ────────────────────────────────
+    moveit::core::RobotState controller_state(robot_model);
+    for (size_t i = 0; i < joint_names.size(); ++i)
+        controller_state.setJointPositions(joint_names[i], &controller_angles[i]);
+    controller_state.update();
+    Eigen::Vector3d controller_ee =
+        controller_state.getGlobalLinkTransform(end_effector_link).translation();
+
+    // ── Step 2: FK(robo_arm) → current_ee ────────────────────────────────────
+    // 若外部传入已 update() 的 arm_state 则直接复用（每周期节省 1 次完整 FK）
+    std::unique_ptr<moveit::core::RobotState> local_state;
+    if (!arm_state) {
+        local_state = std::make_unique<moveit::core::RobotState>(robot_model);
+        for (size_t i = 0; i < joint_names.size(); ++i)
+            local_state->setJointPositions(joint_names[i], &robo_arm_angles[i]);
+        local_state->update();
+        arm_state = local_state.get();
+    }
+    Eigen::Vector3d current_ee =
+        arm_state->getGlobalLinkTransform(end_effector_link).translation();
+
+    // ── Step 3: 投影到 constrain_direction 垂直平面，得到约束目标 ───────────────────────────
+    // 若提供 controller_ee_reference（模式切换时的控制器位置），则以相对位移驱动，
+    // 切换瞬间 displacement=0，避免机械臂跳变到控制器映射位置。
+    Eigen::Vector3d constrain_direction_normalized = constrain_direction.normalized();
+    Eigen::Vector3d displacement = (controller_ee_reference != nullptr)
+        ? (controller_ee - *controller_ee_reference)   // 相对运动：以模式切换时为原点
+        : (controller_ee - reference_position);        // 绝对运动：原逻辑
+    double constrain_component = displacement.dot(constrain_direction_normalized);
+    Eigen::Vector3d constrained_target = reference_position + (displacement - constrain_component * constrain_direction_normalized);
+
+    // ── Step 4: 速度方向 = current_ee → constrained_target，再去 constrain_direction 分量 ──
+    Eigen::Vector3d velocity = constrained_target - current_ee;
+    velocity = velocity - velocity.dot(constrain_direction_normalized) * constrain_direction_normalized;   // 双重投影，防止数值漂移
+
+    // ── 姿态误差计算 ─────────────────────────────────────────────────────────
+    // UP   模式（!change_link6_orientation_allowed）：完全锁定朝向 = desired_ee_orientation
+    // ROLL 模式（change_joint6_allowed）            ：z 轴方向锁定，绕 z 轴跟随控制器
+    // TURN 模式 / 无朝向需求                        ：omega = 0，退化为纯位置控制
+    Eigen::Vector3d omega = Eigen::Vector3d::Zero();
+    const bool use_orientation_control = (desired_ee_orientation != nullptr);
+
+    if (use_orientation_control) {
+        Eigen::Matrix3d current_rot =
+            arm_state->getGlobalLinkTransform(end_effector_link).rotation();
+        Eigen::Quaterniond current_q(current_rot);
+
+        if (!change_link6_orientation_allowed) {
+            // ── UP：完全锁定朝向 ──────────────────────────────────────────────
+            // ω = 2 · vec( q_des · q_cur⁻¹ )，世界坐标系角速度
+            Eigen::Quaterniond q_err = (*desired_ee_orientation) * current_q.inverse();
+            if (q_err.w() < 0) q_err.coeffs() = -q_err.coeffs();   // 取短弧
+            omega = 2.0 * q_err.vec();
+
+        } else if (change_joint6_allowed) {
+            // ── ROLL：z 轴锁定，绕 z 跟随控制器 ─────────────────────────────
+            // 参考 z 轴（进入 ROLL 时记录，在世界坐标系中固定不变）
+            Eigen::Vector3d z_ref =
+                desired_ee_orientation->toRotationMatrix().col(2);
+
+            // 控制器末端 x 轴在世界坐标系中的方向
+            Eigen::Matrix3d ctrl_rot =
+                controller_state.getGlobalLinkTransform(end_effector_link).rotation();
+            Eigen::Vector3d ctrl_x = ctrl_rot.col(0);
+
+            // 将控制器 x 轴投影到 z_ref 垂直平面，得到"绕 z 的旋转分量"
+            Eigen::Vector3d target_x = ctrl_x - ctrl_x.dot(z_ref) * z_ref;
+            if (target_x.norm() < 1e-6) {
+                // 控制器 x 轴与 z_ref 平行（退化），保持参考 x 轴
+                target_x = desired_ee_orientation->toRotationMatrix().col(0);
+            } else {
+                target_x.normalize();
+            }
+            Eigen::Vector3d target_y = z_ref.cross(target_x).normalized();
+
+            // 目标旋转矩阵：z 轴固定 + 从控制器提取的绕 z 旋转
+            Eigen::Matrix3d target_rot;
+            target_rot.col(0) = target_x;
+            target_rot.col(1) = target_y;
+            target_rot.col(2) = z_ref;
+
+            Eigen::Quaterniond q_err =
+                Eigen::Quaterniond(target_rot) * current_q.inverse();
+            if (q_err.w() < 0) q_err.coeffs() = -q_err.coeffs();
+            omega = 2.0 * q_err.vec();
+        }
+        // change_link6_orientation_allowed=true && !change_joint6_allowed（TURN）
+        // → omega 保持 0，姿态自由变化
+
+        // 限制角速度幅值（max 1.0 rad/s）
+        const double MAX_ANGULAR_SPEED = 1.0;
+        double omega_norm = omega.norm();
+        if (omega_norm > MAX_ANGULAR_SPEED)
+            omega *= (MAX_ANGULAR_SPEED / omega_norm);
+    }
+
+    // ── Step 5: 死区（位置 < 0.5 mm 且姿态 < 0.01 rad 时不动）──────────────
+    double position_error = velocity.norm();
+    double orient_error   = omega.norm();
+    const double DEAD_ZONE        = 0.0005;   // m
+    const double ORIENT_DEAD_ZONE = 0.01;     // rad（约 0.6°）
+    if (position_error < DEAD_ZONE && orient_error < ORIENT_DEAD_ZONE) {
+        return robo_arm_angles;
+    }
+
+    // ── Step 6: 限速（max 0.45 m/s）──────────────────────────────────────────
+    const double MAX_SPEED = 0.45;   // m/s
+    if (position_error > MAX_SPEED) {
+        velocity *= (MAX_SPEED / position_error);
+    }
+
+    // ── Step 7: 雅可比矩阵；有姿态控制时使用完整 6 × n ──────────────────────
+    Eigen::MatrixXd full_jacobian;
+    Eigen::Vector3d ref_pt(0.0, 0.0, 0.0);
+    if (!arm_state->getJacobian(
+            joint_model_group,
+            arm_state->getLinkModel(end_effector_link),
+            ref_pt, full_jacobian)) {
+        RCLCPP_ERROR(LOGGER, "direction_constraint: failed to compute Jacobian");
+        return {};
+    }
+
+    Eigen::MatrixXd J;
+    Eigen::VectorXd vel_cmd;
+    if (use_orientation_control) {
+        J = full_jacobian;           // 6 × n（线速度 + 角速度）
+        vel_cmd.resize(6);
+        vel_cmd << velocity, omega;
+    } else {
+        J = full_jacobian.topRows(3);   // 3 × n（仅线速度，退化为原逻辑）
+        vel_cmd = velocity;
+    }
+
+    // ── Step 8: SVD → 条件数 → 自适应阻尼 ───────────────────────────────────
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(J);
+    const Eigen::VectorXd& sv = svd.singularValues();
+    double condition_number = (sv(sv.size() - 1) > 1e-10)
+                              ? sv(0) / sv(sv.size() - 1)
+                              : 1e6;
+
+    const double DAMPING_MIN = 0.005;
+    const double DAMPING_MAX = 0.1;
+    const double COND_LOW    = 50.0;
+    const double COND_HIGH   = 200.0;
+    double damping;
+    if (condition_number <= COND_LOW) {
+        damping = DAMPING_MIN;
+    } else if (condition_number >= COND_HIGH) {
+        damping = DAMPING_MAX;
+    } else {
+        double t = (condition_number - COND_LOW) / (COND_HIGH - COND_LOW);
+        damping = DAMPING_MIN + t * (DAMPING_MAX - DAMPING_MIN);
+    }
+
+    // ── Step 9: J_pinv = Jᵀ(JJᵀ + λ²I)⁻¹；Δq = J_pinv · vel_cmd · dt ──────
+    int jrows = static_cast<int>(J.rows());
+    Eigen::MatrixXd JJt = J * J.transpose()
+                        + (damping * damping) * Eigen::MatrixXd::Identity(jrows, jrows);
+    Eigen::MatrixXd J_pinv = J.transpose() * JJt.inverse();   // n × jrows
+    Eigen::VectorXd delta_q = J_pinv * vel_cmd * dt;
+
+    // ── Step 10: 关节角变化量等比缩放（硬限幅 0.1 rad/cycle）────────────────
+    const double MAX_JOINT_DELTA = 0.1;   // rad
+    double max_dq = delta_q.cwiseAbs().maxCoeff();
+    if (max_dq > MAX_JOINT_DELTA) {
+        delta_q *= (MAX_JOINT_DELTA / max_dq);
+    }
+
+    // ── Step 11: 关节限位裕度等比缩放（MARGIN = 0.05 rad）───────────────────
+    const double JOINT_LIMIT_MARGIN = 0.05;   // rad
+    const auto& joint_models = joint_model_group->getActiveJointModels();
+    double limit_scale = 1.0;
+    for (size_t i = 0; i < joint_models.size(); ++i) {
+        const auto& bounds = joint_models[i]->getVariableBounds();
+        if (bounds.empty()) continue;
+        double target = robo_arm_angles[i] + delta_q(static_cast<Eigen::Index>(i));
+        double lo = bounds[0].min_position_ + JOINT_LIMIT_MARGIN;
+        double hi = bounds[0].max_position_ - JOINT_LIMIT_MARGIN;
+        if (target < lo && delta_q(static_cast<Eigen::Index>(i)) < 0) {
+            double allowed = robo_arm_angles[i] - lo;
+            if (allowed > 0 && std::abs(delta_q(static_cast<Eigen::Index>(i))) > 1e-6)
+                limit_scale = std::min(limit_scale,
+                    allowed / std::abs(delta_q(static_cast<Eigen::Index>(i))));
+            else
+                limit_scale = 0.0;
+        } else if (target > hi && delta_q(static_cast<Eigen::Index>(i)) > 0) {
+            double allowed = hi - robo_arm_angles[i];
+            if (allowed > 0 && std::abs(delta_q(static_cast<Eigen::Index>(i))) > 1e-6)
+                limit_scale = std::min(limit_scale,
+                    allowed / std::abs(delta_q(static_cast<Eigen::Index>(i))));
+            else
+                limit_scale = 0.0;
+        }
+    }
+    if (limit_scale < 1.0) {
+        delta_q *= std::max(limit_scale, 0.0);
+    }
+
+    // ── 构造目标关节角度 ─────────────────────────────────────────────────────
+    std::vector<double> result(robo_arm_angles.size());
+    for (size_t i = 0; i < robo_arm_angles.size(); ++i) {
+        result[i] = robo_arm_angles[i] + delta_q(static_cast<Eigen::Index>(i));
+    }
+
+    RCLCPP_DEBUG(LOGGER,
+        "direction_constraint: pos_err=%.4fm orient_err=%.4frad cond=%.1f λ=%.4f dt=%.3fs",
+        position_error, orient_error, condition_number, damping, dt);
+
+    return result;
+}
+*/
