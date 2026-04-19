@@ -3,9 +3,6 @@ build/
 install/
 log/
 
-#pyroki库
-pyroki/
-
 # Python 缓存
 __pycache__/
 *.py[cod]
