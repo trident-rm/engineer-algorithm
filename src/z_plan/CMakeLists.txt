@@ -103,6 +103,42 @@ ament_target_dependencies(z_plan_movegroup_robo_arm
   trajectory_msgs
 )
 
+# Add executable for TURN half-circle planning mode
+add_executable(turn_movegroup src/turn_movegroup.cpp)
+target_link_libraries(turn_movegroup utils)
+ament_target_dependencies(turn_movegroup
+  rclcpp
+  geometry_msgs
+  moveit_ros_planning_interface
+  moveit_visual_tools
+  moveit_msgs
+  trajectory_msgs
+)
+
+# Add executable for retreat Cartesian path test
+add_executable(turn_retreat src/turn_retreat.cpp)
+target_link_libraries(turn_retreat utils)
+ament_target_dependencies(turn_retreat
+  rclcpp
+  geometry_msgs
+  moveit_ros_planning_interface
+  moveit_visual_tools
+  moveit_msgs
+  trajectory_msgs
+)
+
+# Add executable for half-auto up interactive test
+add_executable(half_auto_up src/half_auto_up.cpp)
+target_link_libraries(half_auto_up utils)
+ament_target_dependencies(half_auto_up
+  rclcpp
+  geometry_msgs
+  moveit_ros_planning_interface
+  moveit_visual_tools
+  moveit_msgs
+  trajectory_msgs
+)
+
 if(serial_FOUND)
   # Add executable for real world situation
   add_executable(real_world src/real_world.cpp)
@@ -193,6 +229,9 @@ set(_install_targets
   z_plan_node
   z_plan_movegroup
   z_plan_movegroup_robo_arm
+  turn_movegroup
+  turn_retreat
+  half_auto_up
   test_constraint
   rviz_simulation
 )

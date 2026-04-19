@@ -118,7 +118,7 @@ Eigen::Vector3d compute_e_hat_direction(const std::vector<std::vector<double>>& 
  * @param  arm_state               可选：外部已 update() 的机械臂 RobotState；非 nullptr 时跳过内部 FK 重建，
  *                                 节省约 2/3 的重复 FK 开销（每周期在 control_callback 统一更新一次）
  * @param  desired_ee_orientation  兼容参数（当前实现固定跟随 controller 朝向，不使用）
- * @param  change_link6_orientation_allowed 兼容参数（当前实现固定跟随 controller 朝向，不使用）
+ * @param  change_ee_orientation_allowed 兼容参数（true: 允许末端朝向变化；false: 锁定末端朝向）
  * @retval std::vector<double>     约束后一步目标关节角度（死区时返回当前角度，失败时返回空）
  */
 std::vector<double> direction_constraint(
@@ -134,6 +134,38 @@ std::vector<double> direction_constraint(
     double dt = 0.05,
     moveit::core::RobotState* arm_state = nullptr,
     const Eigen::Quaterniond* desired_ee_orientation = nullptr,
-    const bool change_link6_orientation_allowed = false);
+    const bool change_ee_orientation_allowed = false);
+
+/**
+ * @brief  TURN 模式半圆轨迹规划（笛卡尔路径）
+ * @param  center           半圆圆心（base_link 坐标系）
+ * @param  start_pose       起始末端位姿
+ * @param  radius           半径（米）
+ * @param  num_points       离散点数量
+ * @param  up_direction     半圆平面内“上”方向单位向量
+ * @param  e_hat_direction  半圆平面内起始径向单位向量
+ * @param  move_group       MoveGroup 接口
+ * @retval moveit_msgs::msg::RobotTrajectory 规划结果
+ */
+moveit_msgs::msg::RobotTrajectory plan_half_circle_turn(
+    Eigen::Vector3d center,
+    geometry_msgs::msg::Pose start_pose,
+    double radius,
+    int num_points,
+    Eigen::Vector3d up_direction,
+    Eigen::Vector3d e_hat_direction,
+    std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group);
+
+/**
+ * @brief  计算末端沿自身 z 轴方向撤退的笛卡尔路径
+ * @param  current_pose      当前末端位姿
+ * @param  retreat_distance  撤退距离（米，通常为负值）
+ * @param  move_group        MoveGroup 接口
+ * @retval moveit_msgs::msg::RobotTrajectory 规划结果
+ */
+moveit_msgs::msg::RobotTrajectory plan_retreat(
+    geometry_msgs::msg::Pose current_pose,
+    double retreat_distance,
+    std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group);
 
 #endif

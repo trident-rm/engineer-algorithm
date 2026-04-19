@@ -3,19 +3,31 @@ import yaml
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from moveit_configs_utils import MoveItConfigsBuilder
+from moveit_configs_utils.launches import (
+    generate_static_virtual_joint_tfs_launch,
+    generate_rsp_launch,
+    generate_move_group_launch,
+)
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
     
     # 构建 MoveIt 配置
     moveit_config = (
-        MoveItConfigsBuilder("robo_arm6", package_name="robo_arm6_moveit_config")
-        .robot_description(file_path="config/robo_arm6.urdf.xacro")
-        .robot_description_semantic(file_path="config/robo_arm6.srdf")
+        MoveItConfigsBuilder("robo_arm10", package_name="robo_arm10_moveit_config")
+        .robot_description(file_path="config/robo_arm10.urdf.xacro")
+        .robot_description_semantic(file_path="config/robo_arm10.srdf")
         .robot_description_kinematics(file_path="config/kinematics.yaml")
         .joint_limits(file_path="config/joint_limits.yaml")
         .to_moveit_configs()
     )
+    
+    # Generate static virtual joint TFs
+    static_virtual_joint_tfs = generate_static_virtual_joint_tfs_launch(moveit_config)
+    
+    # Use standard MoveIt launch generators
+    rsp_launch = generate_rsp_launch(moveit_config)
+    move_group_launch = generate_move_group_launch(moveit_config)
     
     # real_world_new 节点
     real_world_node = Node(
@@ -31,32 +43,19 @@ def generate_launch_description():
         ],
     )
     
-    
-    movegroup_node = Node(
-        package='moveit_ros_move_group',
-        executable='move_group',
-    
-    
-       name='move_group',
+    # Joint state publisher to provide initial state
+    joint_state_publisher = Node(
+        package='joint_state_publisher',
+        executable='joint_state_publisher',
+        name='joint_state_publisher',
         output='screen',
-        parameters=[
-            moveit_config.to_dict(),
-            {
-                'use_sim_time': False,
-            }
-        ],
+        parameters=[{
+            'robot_description': moveit_config.robot_description,
+        }],
     )
     
-    robot_state_publisher = Node(
-        package='robot_state_publisher',
-        executable='robot_state_publisher',
-        name='robot_state_publisher',
-        output='screen',
-        parameters=[moveit_config.robot_description],
-    )   
-    
     rviz_config_file = os.path.join(
-        get_package_share_directory('robo_arm6_moveit_config'),
+        get_package_share_directory('robo_arm10_moveit_config'),
         'config',
         'moveit.rviz'
     )
@@ -73,12 +72,16 @@ def generate_launch_description():
             moveit_config.planning_pipelines,
             moveit_config.robot_description_kinematics,
         ],
-    )   
+    )
     
-    return LaunchDescription([
-        rviz,
-        robot_state_publisher,
-        movegroup_node,
-        real_world_node,
-    ])
+    return LaunchDescription(
+        list(static_virtual_joint_tfs.entities) +
+        list(rsp_launch.entities) +
+        list(move_group_launch.entities) +
+        [
+            joint_state_publisher,
+            rviz,
+            real_world_node,
+        ]
+    )
     

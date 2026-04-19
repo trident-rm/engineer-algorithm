@@ -12,6 +12,7 @@
 #include <moveit/planning_scene_interface/planning_scene_interface.hpp>
 #include <moveit_msgs/msg/display_robot_state.hpp>
 #include <moveit_msgs/msg/display_trajectory.hpp>
+#include <moveit_msgs/msg/robot_trajectory.hpp>
 #include <moveit_visual_tools/moveit_visual_tools.h>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <geometry_msgs/msg/pose.hpp>
@@ -355,10 +356,10 @@ std::vector<double> direction_constraint(
     double dt,
     moveit::core::RobotState* arm_state,
     const Eigen::Quaterniond* desired_ee_orientation,
-    const bool change_link6_orientation_allowed)
+    const bool change_ee_orientation_allowed)
 {
     //(void)desired_ee_orientation;
-    //(void)change_link6_orientation_allowed;
+    //(void)change_ee_orientation_allowed;
 
     // ── Step 1: FK(controller) → controller_ee ────────────────────────────────
     moveit::core::RobotState controller_state(robot_model);
@@ -424,7 +425,7 @@ std::vector<double> direction_constraint(
     Eigen::Quaterniond current_q(current_rot);
 
     if (use_orientation_control) {
-        if (!change_link6_orientation_allowed) {
+        if (!change_ee_orientation_allowed) {
             // ── UP：完全锁定朝向 ──────────────────────────────────────────────
             Eigen::Quaterniond q_err = (*desired_ee_orientation) * current_q.inverse();
             if (q_err.w() < 0) q_err.coeffs() = -q_err.coeffs();   // 取短弧
@@ -567,6 +568,8 @@ std::vector<double> direction_constraint(
     Eigen::MatrixXd J_pinv = J.transpose() * JJt.inverse();   // n × jrows
     Eigen::VectorXd delta_q = J_pinv * vel_cmd * dt;
 
+
+    /*
     // ── Step 9b: 关节空间牵引（投影到零空间，避免干扰主任务）────────────────
     {
         const double JOINT_SYNC_GAIN = 0.3;   // rad/s per rad error
@@ -580,7 +583,8 @@ std::vector<double> direction_constraint(
         Eigen::MatrixXd N = Eigen::MatrixXd::Identity(n, n) - J_pinv * J;
         delta_q += N * delta_q_sync;
     }
-
+    */
+   
     // ── Step 10: 关节角变化量等比缩放（硬限幅 0.1 rad/cycle）────────────────
     const double MAX_JOINT_DELTA = 0.1;   // rad
     double max_dq = delta_q.cwiseAbs().maxCoeff();
@@ -650,7 +654,7 @@ std::vector<double> direction_constraint(
     moveit::core::RobotState* arm_state,
     const Eigen::Quaterniond* desired_ee_orientation,
     const bool change_joint6_allowed,
-    const bool change_link6_orientation_allowed,
+    const bool change_ee_orientation_allowed,
     const Eigen::Vector3d* controller_ee_reference)
 {
     // ── Step 1: FK(controller) → controller_ee ────────────────────────────────
@@ -689,7 +693,7 @@ std::vector<double> direction_constraint(
     velocity = velocity - velocity.dot(constrain_direction_normalized) * constrain_direction_normalized;   // 双重投影，防止数值漂移
 
     // ── 姿态误差计算 ─────────────────────────────────────────────────────────
-    // UP   模式（!change_link6_orientation_allowed）：完全锁定朝向 = desired_ee_orientation
+    // UP   模式（!change_ee_orientation_allowed）：完全锁定朝向 = desired_ee_orientation
     // ROLL 模式（change_joint6_allowed）            ：z 轴方向锁定，绕 z 轴跟随控制器
     // TURN 模式 / 无朝向需求                        ：omega = 0，退化为纯位置控制
     Eigen::Vector3d omega = Eigen::Vector3d::Zero();
@@ -700,7 +704,7 @@ std::vector<double> direction_constraint(
             arm_state->getGlobalLinkTransform(end_effector_link).rotation();
         Eigen::Quaterniond current_q(current_rot);
 
-        if (!change_link6_orientation_allowed) {
+        if (!change_ee_orientation_allowed) {
             // ── UP：完全锁定朝向 ──────────────────────────────────────────────
             // ω = 2 · vec( q_des · q_cur⁻¹ )，世界坐标系角速度
             Eigen::Quaterniond q_err = (*desired_ee_orientation) * current_q.inverse();
@@ -739,7 +743,7 @@ std::vector<double> direction_constraint(
             if (q_err.w() < 0) q_err.coeffs() = -q_err.coeffs();
             omega = 2.0 * q_err.vec();
         }
-        // change_link6_orientation_allowed=true && !change_joint6_allowed（TURN）
+        // change_ee_orientation_allowed=true && !change_joint6_allowed（TURN）
         // → omega 保持 0，姿态自由变化
 
         // 限制角速度幅值（max 1.0 rad/s）
@@ -864,3 +868,121 @@ std::vector<double> direction_constraint(
     return result;
 }
 */
+
+/**
+ * @brief 半自动TURN模式半圆规划
+ * @todo
+ * @param
+ * @retval
+ */
+
+moveit_msgs::msg::RobotTrajectory plan_half_circle_turn(Eigen::Vector3d center, geometry_msgs::msg::Pose start_pose, double radius, int num_points, Eigen::Vector3d normal_direction, Eigen::Vector3d e_hat_direction, std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group){
+    (void)center;
+    std::vector<geometry_msgs::msg::Pose> waypoints;
+    const double angle_range = M_PI/2;
+
+    Eigen::Vector3d normal_axis = normal_direction.normalized();
+    Eigen::Vector3d ehat_axis = e_hat_direction.normalized();
+
+    Eigen::Vector3d start_pos(
+        start_pose.position.x,
+        start_pose.position.y,
+        start_pose.position.z);
+
+    // 按需求：圆心 = 起点沿 e_hat 方向偏移 radius
+    Eigen::Vector3d world_center = start_pos + ehat_axis * radius;
+    // 半径向量（从圆心指向起点）
+    Eigen::Vector3d radius_vec0 = start_pos - world_center;
+
+    const Eigen::Quaterniond start_quat(
+        start_pose.orientation.w,
+        start_pose.orientation.x,
+        start_pose.orientation.y,
+        start_pose.orientation.z);
+    Eigen::Matrix3d start_rot = start_quat.toRotationMatrix();
+    Eigen::Vector3d start_x = start_rot.col(0);
+
+    waypoints.reserve(num_points + 1);
+    waypoints.push_back(start_pose);
+
+    for (int i = 1; i <= num_points; ++i) {
+        double angle = angle_range * static_cast<double>(i) / static_cast<double>(num_points);
+        Eigen::AngleAxisd aa(angle, normal_axis);
+        Eigen::Vector3d world_point = world_center + aa * radius_vec0;
+
+        geometry_msgs::msg::Pose target_pose;
+        target_pose.position.x = world_point.x();
+        target_pose.position.y = world_point.y();
+        target_pose.position.z = world_point.z();
+
+        // 姿态半圆：末端（gripper）x 轴绕 normal 旋转
+        Eigen::Vector3d x_target = (aa * start_x).normalized();
+        Eigen::Vector3d y_target = normal_axis;
+        Eigen::Vector3d z_target = x_target.cross(y_target).normalized();
+      
+
+        Eigen::Matrix3d target_rot;
+        target_rot.col(0) = x_target;
+        target_rot.col(1) = y_target;
+        target_rot.col(2) = z_target;
+
+        Eigen::Quaterniond target_quat(target_rot);
+        target_quat.normalize();
+        target_pose.orientation.x = target_quat.x();
+        target_pose.orientation.y = target_quat.y();
+        target_pose.orientation.z = target_quat.z();
+        target_pose.orientation.w = target_quat.w();
+        waypoints.push_back(target_pose);
+    }
+    moveit_msgs::msg::RobotTrajectory trajectory;
+    const double jump_threshold = 0.0;
+    const double eef_step = 0.01;
+    double fraction = 0.0;
+    int maxtries = 100;
+    int attempts = 0;
+    while (fraction < 1.0 && attempts < maxtries) {
+        fraction = move_group->computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
+        attempts++;
+        if (attempts % 10 == 0) {
+            RCLCPP_WARN(LOGGER, "still trying after %d attempts, path fraction %.2f", attempts, fraction);
+        }
+    }
+    return trajectory;
+}
+
+/**
+ * @brief 无干涉地将抓夹从科技核心移开
+ * @param retreat_distance 撤退距离，为负值
+ */
+
+ moveit_msgs::msg::RobotTrajectory plan_retreat(geometry_msgs::msg::Pose current_pose, double retreat_distance, std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group){
+     // 末端（gripper）z 轴在 base_link 下的朝向
+    Eigen::Quaterniond quat(
+                    current_pose.orientation.w,
+                    current_pose.orientation.x,
+                    current_pose.orientation.y,
+                    current_pose.orientation.z
+                );
+    Eigen::Vector3d retreat_direction = quat * Eigen::Vector3d(0, 0, 1); // gripper 的 z 轴方向
+    
+    geometry_msgs::msg::Pose target_pose = compute_target_pose_along_direction(current_pose, retreat_direction, retreat_distance);
+    std::vector<geometry_msgs::msg::Pose> waypoints = {target_pose};
+    moveit_msgs::msg::RobotTrajectory trajectory;
+    const double jump_threshold = 0.0;
+    const double eef_step = 0.01;
+    double fraction = 0.0;
+    int maxtries = 100;
+    int attempts = 0;
+    while (fraction < 1.0 && attempts < maxtries) {
+        fraction = move_group->computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
+        attempts++;
+        if (attempts % 10 == 0) {
+            RCLCPP_WARN(LOGGER, "still trying after %d attempts, path fraction %.2f", attempts, fraction);
+        }   
+    }
+    return trajectory;
+
+}
+
+
+

@@ -5,7 +5,7 @@ from ament_index_python.packages import get_package_share_directory
 import os
 
 def generate_launch_description():
-    moveit_config = MoveItConfigsBuilder("robo_arm6", package_name="robo_arm6_moveit_config").to_moveit_configs()
+    moveit_config = MoveItConfigsBuilder("robo_arm10", package_name="robo_arm10_moveit_config").to_moveit_configs()
     
     real_world_node = Node(
         package='z_plan',
@@ -39,7 +39,7 @@ def generate_launch_description():
 
     # RViz with MoveIt config (if the moveit.rviz exists in the moveit config package)
     rviz_config_file = os.path.join(
-        get_package_share_directory('robo_arm6_moveit_config'),
+        get_package_share_directory('robo_arm10_moveit_config'),
         'config',
         'moveit.rviz'
     )

@@ -42,6 +42,8 @@ enum ControlMode {
     TURN = 2, 
     ROLL = 3, 
     RESET = 4, 
+    RETREAT = 5,
+    INCREMENT = 6
 };
 
 /**
@@ -50,7 +52,7 @@ enum ControlMode {
  * - 从串口节点获取机械臂和控制器角度
  * - 角度滤波和坐标转换
  * - 重力补偿计算
- * - 不同控制模式的处理（NO/UP/TURN/ROLL/RESET）
+ * - 不同控制模式的处理（NO/UP/TURN/ROLL/RESET/RETREAT/INCREMENT）
  */
 class RobotController {
 public:
@@ -113,8 +115,9 @@ public:
         // 初始化重力补偿
         compute_gravity_compensation_ = make_gravity_closure(robot_model_);
         
-        // 初始化 RESET 位置
-        reset_pose_ = compute_end_effector_pose({0, 2.65, -0.86, 3.14, 3.14, 0});
+        // 初始化 RESET 位置（真实机械臂固定角度 -> URDF角度）
+        const std::vector<double> reset_hw = {0.0, 2.65, -0.86, 3.14, 3.14, 0.0};
+        reset_pose_ = compute_end_effector_pose(convert_hardware_to_urdf(reset_hw));
         
         // 初始化 RViz 可视化工具（用于当前机械臂状态）
         visual_tools_ = std::make_shared<moveit_visual_tools::MoveItVisualTools>(
@@ -509,13 +512,9 @@ private:
             return;
         }
         
-        //角度滤波和转换
-        std::vector<double> robo_arm_angles = robo_filter_.filter(robo_arm_angles_raw);
-        robo_arm_angles[1] = -robo_arm_angles[1];
-        robo_arm_angles[4] = 6.28 - robo_arm_angles[4];
-        std::vector<double> controller_angles = controller_filter_.filter(controller_angles_raw);
-        controller_angles[1] = -controller_angles[1];
-        controller_angles[4] = 6.28 - controller_angles[4];
+        // 角度滤波和转换（真实机械臂/控制器角度 -> URDF角度）
+        std::vector<double> robo_arm_angles = convert_hardware_to_urdf(robo_filter_.filter(robo_arm_angles_raw));
+        std::vector<double> controller_angles = convert_hardware_to_urdf(controller_filter_.filter(controller_angles_raw));
 
         // 计算重力补偿力矩
         latest_torques_ = compute_gravity_compensation_(robo_arm_angles);
@@ -527,14 +526,14 @@ private:
             if (control_mode == UP) {
                 reference_pose_ = compute_end_effector_pose(robo_arm_angles);
                 reference_pose_initialized_ = true;
-                // e_hat_direction 是 link6 的 y 轴方向在世界坐标系中的表示
+                // e_hat_direction 是末端（gripper）y 轴在世界坐标系中的表示
                 Eigen::Quaterniond quat(
                     reference_pose_.orientation.w,
                     reference_pose_.orientation.x,
                     reference_pose_.orientation.y,
                     reference_pose_.orientation.z
                 );
-                e_hat_direction_ = quat * Eigen::Vector3d(0, 1, 0);  // link6 的 y 轴
+                e_hat_direction_ = quat * Eigen::Vector3d(0, 1, 0);  // gripper 的 y 轴
 
                 // 记录切换瞬间控制器 EE 位置，作为后续相对位移的原点
                 {
@@ -609,11 +608,10 @@ private:
                 reset_trajectory_points_.clear();
                 reset_trajectory_index_ = 0;
 
+                // 真实机械臂固定 RESET 角度（hardware）
                 std::vector<double> hw = {0.0, 2.65, -0.86, 3.14, 3.14, 0.0};
-                // hardware → URDF 逆变换（与 control_callback 中的正变换一致）
-                std::vector<double> urdf_target = hw;
-                urdf_target[1] = -urdf_target[1];
-                urdf_target[4] = 6.28 - urdf_target[4];
+                // hardware -> URDF（与 control_callback 中保持一致）
+                std::vector<double> urdf_target = convert_hardware_to_urdf(hw);
 
                 // 以当前机械臂角度为起点设置规划起始状态
                 moveit::core::RobotState start_state(robot_model_);
@@ -632,8 +630,8 @@ private:
                         {joint_names_[4], urdf_target[4]},
                         {joint_names_[5], urdf_target[5]},
                     });
-                move_group_->setMaxVelocityScalingFactor(0.05);       // 0~1，越小越慢
-                move_group_->setMaxAccelerationScalingFactor(0.05);
+                move_group_->setMaxVelocityScalingFactor(0.2);       // 0~1，越小越慢
+                move_group_->setMaxAccelerationScalingFactor(0.1);
                 moveit::planning_interface::MoveGroupInterface::Plan plan;
                 if (move_group_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS) {
                     const auto& jt = plan.trajectory.joint_trajectory;
@@ -648,9 +646,40 @@ private:
                     RCLCPP_WARN(LOGGER, "RESET mode: MoveIt planning failed, will hold current pose");
                 }
                 move_group_->setStartStateToCurrentState();
-                move_group_->setMaxVelocityScalingFactor(0.1);        // 规划完恢复默认
-                move_group_->setMaxAccelerationScalingFactor(0.1);
+                //move_group_->setMaxVelocityScalingFactor(0.1);        // 规划完恢复默认
+                //move_group_->setMaxAccelerationScalingFactor(0.1);
 
+            }
+
+            if (control_mode == RETREAT) {
+                retreat_trajectory_points_.clear();
+                retreat_trajectory_index_ = 0;
+
+                // 以当前机械臂角度为起点设置规划起始状态（与 RESET 一致）
+                moveit::core::RobotState start_state(robot_model_);
+                for (size_t i = 0; i < joint_names_.size(); ++i)
+                    start_state.setJointPositions(joint_names_[i], &robo_arm_angles[i]);
+                start_state.update();
+                move_group_->setStartState(start_state);
+
+                geometry_msgs::msg::Pose current_pose = compute_end_effector_pose(robo_arm_angles);
+                moveit_msgs::msg::RobotTrajectory retreat_trajectory =
+                    plan_retreat(current_pose, retreat_distance_, move_group_);
+
+                const auto& jt = retreat_trajectory.joint_trajectory;
+                for (const auto& pt : jt.points) {
+                    if (pt.positions.size() == joint_names_.size())
+                        retreat_trajectory_points_.push_back(
+                            std::vector<double>(pt.positions.begin(), pt.positions.end()));
+                }
+
+                if (!retreat_trajectory_points_.empty()) {
+                    RCLCPP_INFO(LOGGER, "RETREAT mode: planned %zu waypoints", retreat_trajectory_points_.size());
+                } else {
+                    RCLCPP_WARN(LOGGER, "RETREAT mode: planning failed, will hold current pose");
+                }
+
+                move_group_->setStartStateToCurrentState();
             }
             
             last_control_mode_ = control_mode;
@@ -736,6 +765,13 @@ private:
             case RESET:
                 handle_mode_reset(robo_arm_angles);
                 break;
+            case RETREAT:
+                handle_mode_retreat(robo_arm_angles);
+                break;  
+            
+            //case INCREMENT:
+            //    handle_mode_increment(robo_arm_angles, controller_angles);
+            //    break;
         }
         
         // 统一触发所有可视化更新
@@ -830,7 +866,7 @@ private:
     /**
      * @brief 处理 TURN 模式
      * 
-     * 以距离末端位置 100mm 的点为圆心，绕 normal_direction 往 up_direction 方向转90度
+    * 以距离末端位置 100mm（ehat，即 gripper 的 z 轴方向）的点为圆心，绕 normal_direction（gripper 的 y 轴）往 up_direction 方向转 90 度
      */
     void handle_mode_turn(const std::vector<double>& robo_arm_angles, const std::vector<double>& controller_angles) {
         if (!reference_pose_initialized_) return;
@@ -859,7 +895,7 @@ private:
             0.20,
             nullptr,
             nullptr,   // desired_ee_orientation
-            true);     // change_link6_orientation_allowed
+            true);     // change_ee_orientation_allowed
 
         if (target_angles.empty()) {
             // 雅可比计算失败（奇异点附近），维持当前角度
@@ -1004,8 +1040,8 @@ private:
             joint_names_,
             0.20,
             nullptr,
-            &ref_orient,   // desired_ee_orientation
-            true);         // change_link6_orientation_allowed
+            nullptr,   // desired_ee_orientation
+            true);         // change_ee_orientation_allowed
 
         if (target_angles.empty()) {
             // 雅可比计算失败（奇异点附近），维持当前角度
@@ -1044,6 +1080,31 @@ private:
 
         RCLCPP_DEBUG(LOGGER, "RESET: step %zu / %zu",
                      reset_trajectory_index_, reset_trajectory_points_.size());
+    }
+
+    /**
+     * @brief RETREAT模式安全将爪子撤离出来
+     */
+    void handle_mode_retreat(const std::vector<double>& robo_arm_angles) {
+        if (retreat_trajectory_points_.empty()) {
+            // 规划失败或已完成——维持当前角度
+            serial_node_->send_roboarm_with_controller(
+                latest_torques_, convert_urdf_to_hardware(robo_arm_angles));
+            return;
+        }
+
+        // 取当前步目标
+        const auto& target = retreat_trajectory_points_[retreat_trajectory_index_];
+        serial_node_->send_roboarm_with_controller(
+            latest_torques_, convert_urdf_to_hardware(target));
+
+        // 推进到下一步（到达末尾后停在最后一帧）
+        if (retreat_trajectory_index_ + 1 < retreat_trajectory_points_.size()) {
+            ++retreat_trajectory_index_;
+        }
+
+        RCLCPP_DEBUG(LOGGER, "RETREAT: step %zu / %zu",
+                     retreat_trajectory_index_, retreat_trajectory_points_.size());
     }
 
     /**
@@ -1187,12 +1248,34 @@ private:
     }
     
     /**
+     * @brief 下位机角度 -> URDF 角度转换
+     */
+    std::vector<double> convert_hardware_to_urdf(const std::vector<double>& hardware_angles) {
+        std::vector<double> urdf_angles = hardware_angles;
+        if (urdf_angles.size() < 6) return urdf_angles;
+
+        urdf_angles[0] = hardware_angles[0];
+        urdf_angles[1] = -hardware_angles[1];
+        urdf_angles[2] = -hardware_angles[2];
+        urdf_angles[3] = -hardware_angles[3];
+        urdf_angles[4] = hardware_angles[4] + M_PI;
+        urdf_angles[5] = -hardware_angles[5];
+        return urdf_angles;
+    }
+
+    /**
      * @brief URDF 角度 → 下位机角度转换
      */
     std::vector<float> convert_urdf_to_hardware(const std::vector<double>& urdf_angles) {
         std::vector<float> hardware_angles(urdf_angles.begin(), urdf_angles.end());
-        hardware_angles[1] = -hardware_angles[1];
-        hardware_angles[4] = 6.28 - hardware_angles[4];
+        if (hardware_angles.size() < 6) return hardware_angles;
+
+        hardware_angles[0] = static_cast<float>(urdf_angles[0]);
+        hardware_angles[1] = static_cast<float>(-urdf_angles[1]);
+        hardware_angles[2] = static_cast<float>(-urdf_angles[2]);
+        hardware_angles[3] = static_cast<float>(-urdf_angles[3]);
+        hardware_angles[4] = static_cast<float>(urdf_angles[4] - M_PI);
+        hardware_angles[5] = static_cast<float>(-urdf_angles[5]);
         return hardware_angles;
     }
 
@@ -1255,6 +1338,11 @@ private:
     // RESET 模式轨迹缓存
     std::vector<std::vector<double>> reset_trajectory_points_;
     size_t reset_trajectory_index_ = 0;
+
+    // RETREAT 模式轨迹缓存
+    std::vector<std::vector<double>> retreat_trajectory_points_;
+    size_t retreat_trajectory_index_ = 0;
+    const double retreat_distance_ = -0.20;
 
 };
 

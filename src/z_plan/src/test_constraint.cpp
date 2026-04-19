@@ -94,7 +94,7 @@ public:
         // 计算初始末端位姿作为参考
         reference_pose_ = compute_ee_pose(current_joint_angles_);
         
-        // 计算 e_hat 方向 = link6 的 x 轴
+        // 计算 e_hat 方向 = gripper 的 x 轴
         Eigen::Quaterniond quat(
             reference_pose_.orientation.w,
             reference_pose_.orientation.x,

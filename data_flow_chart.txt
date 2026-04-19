@@ -1,0 +1,43 @@
+Real-world data flow (summary for WeChat):
+
+1. Input:
+   • SerialRxNode publishes robo_arm_angles_raw, controller_angles_raw, control_mode.
+2. Filter & convert:
+   • Angle filters clean noise.
+   • Hardware → URDF mapping: h0=u0, h1=-u1, h2=-u2, h3=-u3, h4=u4+π, h5=-u5.
+3. Output of filter feeds:
+   • Gravity compensation calculator to produce torque command.
+   • State machine: switch control_mode (NO/UP/TURN/ROLL/RESET/RETREAT/INCREMENT).
+4. Branch behavior:
+   • NO: send controller URDF angles directly.
+   • UP/TURN/ROLL: direction_constraint generates URDF target respecting planes.
+   • RESET: plan MoveIt trajectory to fixed hardware reset point, cache URDF trajectory, send one step per cycle.
+   • RETREAT: plan Cartesian retreat, cache URDF waypoints, step through them.
+   • INCREMENT: (reserved increment logic).
+5. Final step: URDF → Hardware mapping before sending to controller:
+   • h0=u0, h1=-u1, h2=-u2, h3=-u3, h4=u4-π, h5=-u5.
+6. Visualization: RViz tools publish current robot, controller, constraint planes, reference pose.
+
+Mermaid lite flow (can paste into chat):
+```mermaid
+flowchart TD
+    A[SerialRxNode data] --> B[Filter + hardware→URDF]
+    B --> C[Gravity compensation]
+    B --> D{control_mode}
+    D -->|NO| E1[send controller angles]
+    D -->|UP| E2[direction_constraint(e_hat)]
+    D -->|TURN| E3[direction_constraint(normal)]
+    D -->|ROLL| E4[direction_constraint(e_hat+orientation)]
+    D -->|RESET| E5[plan/cached reset traj]
+    D -->|RETREAT| E6[plan/cached retreat path]
+    D -->|INCREMENT| E7[increment logic]
+    E1 --> F[URDF→hardware]
+    E2 --> F
+    E3 --> F
+    E4 --> F
+    E5 --> F
+    E6 --> F
+    E7 --> F
+    F --> G[send_roboarm_with_controller]
+    B --> H[RViz visualization]
+```
