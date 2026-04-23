@@ -79,7 +79,7 @@ def generate_launch_description():
 	)
 
 	turn_movegroup_node = Node(
-		package='z_plan',
+		package='plan',
 		executable='turn_movegroup',
 		name='turn_movegroup',
 		output='screen',

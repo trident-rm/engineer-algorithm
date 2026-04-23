@@ -79,7 +79,7 @@ def generate_launch_description():
 	)
 
 	turn_retreat_node = Node(
-		package='z_plan',
+		package='plan',
 		executable='turn_retreat',
 		name='turn_retreat',
 		output='screen',

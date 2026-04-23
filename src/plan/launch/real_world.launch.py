@@ -8,7 +8,7 @@ def generate_launch_description():
     moveit_config = MoveItConfigsBuilder("robo_arm10", package_name="robo_arm10_moveit_config").to_moveit_configs()
     
     real_world_node = Node(
-        package='z_plan',
+        package='plan',
         executable='real_world',
         name='real_world_node',
         output='screen',

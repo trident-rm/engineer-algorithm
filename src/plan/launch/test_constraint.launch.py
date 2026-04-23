@@ -46,7 +46,7 @@ def generate_launch_description():
 
     # 测试节点
     test_node = Node(
-        package='z_plan',
+        package='plan',
         executable='test_constraint',
         name='test_constraint',
         output='screen',

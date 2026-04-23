@@ -148,7 +148,6 @@ std::vector<double> direction_constraint(
  * @retval moveit_msgs::msg::RobotTrajectory 规划结果
  */
 moveit_msgs::msg::RobotTrajectory plan_half_circle_turn(
-    Eigen::Vector3d center,
     geometry_msgs::msg::Pose start_pose,
     double radius,
     int num_points,

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(z_plan)
+project(plan)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -66,43 +66,6 @@ else()
   message(WARNING "serial library NOT found - hardware targets (real_world, read_data) will not be built")
 endif()
 
-# Add executable for MTC version
-add_executable(z_plan_node src/z_plan_node.cpp)
-ament_target_dependencies(z_plan_node
-  rclcpp
-  sensor_msgs
-  geometry_msgs
-  moveit_ros_planning_interface
-  moveit_task_constructor_core
-  moveit_visual_tools
-)
-target_include_directories(z_plan_node PUBLIC ${EIGEN3_INCLUDE_DIRS})
-target_link_libraries(z_plan_node Eigen3::Eigen)
-
-# Add executable for MoveGroupInterface version
-add_executable(z_plan_movegroup src/z_plan_movegroup.cpp)
-target_link_libraries(z_plan_movegroup utils)
-ament_target_dependencies(z_plan_movegroup
-  rclcpp
-  geometry_msgs
-  moveit_ros_planning_interface
-  moveit_visual_tools
-  moveit_msgs
-  trajectory_msgs
-)
-
-# Add executable for MoveGroupInterface version with robo_arm3
-add_executable(z_plan_movegroup_robo_arm src/z_plan_movegroup_robo_arm.cpp)
-target_link_libraries(z_plan_movegroup_robo_arm utils)
-ament_target_dependencies(z_plan_movegroup_robo_arm
-  rclcpp
-  geometry_msgs
-  moveit_ros_planning_interface
-  moveit_visual_tools
-  moveit_msgs
-  trajectory_msgs
-)
-
 # Add executable for TURN half-circle planning mode
 add_executable(turn_movegroup src/turn_movegroup.cpp)
 target_link_libraries(turn_movegroup utils)
@@ -128,9 +91,9 @@ ament_target_dependencies(turn_retreat
 )
 
 # Add executable for half-auto up interactive test
-add_executable(half_auto_up src/half_auto_up.cpp)
-target_link_libraries(half_auto_up utils)
-ament_target_dependencies(half_auto_up
+add_executable(key_step_control src/key_step_control.cpp)
+target_link_libraries(key_step_control utils)
+ament_target_dependencies(key_step_control
   rclcpp
   geometry_msgs
   moveit_ros_planning_interface
@@ -226,12 +189,9 @@ endif()
 
 # Install executables
 set(_install_targets
-  z_plan_node
-  z_plan_movegroup
-  z_plan_movegroup_robo_arm
   turn_movegroup
   turn_retreat
-  half_auto_up
+  key_step_control
   test_constraint
   rviz_simulation
 )

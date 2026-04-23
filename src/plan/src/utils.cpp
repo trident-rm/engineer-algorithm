@@ -876,22 +876,16 @@ std::vector<double> direction_constraint(
  * @retval
  */
 
-moveit_msgs::msg::RobotTrajectory plan_half_circle_turn(Eigen::Vector3d center, geometry_msgs::msg::Pose start_pose, double radius, int num_points, Eigen::Vector3d normal_direction, Eigen::Vector3d e_hat_direction, std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group){
-    (void)center;
+moveit_msgs::msg::RobotTrajectory plan_half_circle_turn(geometry_msgs::msg::Pose start_pose, double radius, int num_points, Eigen::Vector3d normal_direction, Eigen::Vector3d e_hat_direction, std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group){
     std::vector<geometry_msgs::msg::Pose> waypoints;
-    const double angle_range = M_PI/2;
-
-    Eigen::Vector3d normal_axis = normal_direction.normalized();
-    Eigen::Vector3d ehat_axis = e_hat_direction.normalized();
+    const double angle_range = -M_PI/6;
 
     Eigen::Vector3d start_pos(
         start_pose.position.x,
         start_pose.position.y,
         start_pose.position.z);
 
-    // 按需求：圆心 = 起点沿 e_hat 方向偏移 radius
-    Eigen::Vector3d world_center = start_pos + ehat_axis * radius;
-    // 半径向量（从圆心指向起点）
+    Eigen::Vector3d world_center = start_pos - e_hat_direction * radius;
     Eigen::Vector3d radius_vec0 = start_pos - world_center;
 
     const Eigen::Quaterniond start_quat(
@@ -907,7 +901,7 @@ moveit_msgs::msg::RobotTrajectory plan_half_circle_turn(Eigen::Vector3d center, 
 
     for (int i = 1; i <= num_points; ++i) {
         double angle = angle_range * static_cast<double>(i) / static_cast<double>(num_points);
-        Eigen::AngleAxisd aa(angle, normal_axis);
+        Eigen::AngleAxisd aa(angle, normal_direction);
         Eigen::Vector3d world_point = world_center + aa * radius_vec0;
 
         geometry_msgs::msg::Pose target_pose;
@@ -917,7 +911,7 @@ moveit_msgs::msg::RobotTrajectory plan_half_circle_turn(Eigen::Vector3d center, 
 
         // 姿态半圆：末端（gripper）x 轴绕 normal 旋转
         Eigen::Vector3d x_target = (aa * start_x).normalized();
-        Eigen::Vector3d y_target = normal_axis;
+        Eigen::Vector3d y_target = normal_direction;
         Eigen::Vector3d z_target = x_target.cross(y_target).normalized();
       
 
@@ -935,12 +929,12 @@ moveit_msgs::msg::RobotTrajectory plan_half_circle_turn(Eigen::Vector3d center, 
         waypoints.push_back(target_pose);
     }
     moveit_msgs::msg::RobotTrajectory trajectory;
-    const double jump_threshold = 0.0;
-    const double eef_step = 0.01;
+    const double jump_threshold = 0.1;
+    const double eef_step = 0.002;
     double fraction = 0.0;
-    int maxtries = 100;
+    int maxtries = 20;
     int attempts = 0;
-    while (fraction < 1.0 && attempts < maxtries) {
+    while (fraction < 0.95 && attempts < maxtries) {
         fraction = move_group->computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
         attempts++;
         if (attempts % 10 == 0) {
@@ -969,11 +963,11 @@ moveit_msgs::msg::RobotTrajectory plan_half_circle_turn(Eigen::Vector3d center, 
     std::vector<geometry_msgs::msg::Pose> waypoints = {target_pose};
     moveit_msgs::msg::RobotTrajectory trajectory;
     const double jump_threshold = 0.0;
-    const double eef_step = 0.01;
+    const double eef_step = 0.002;
     double fraction = 0.0;
-    int maxtries = 100;
+    int maxtries = 20;
     int attempts = 0;
-    while (fraction < 1.0 && attempts < maxtries) {
+    while (fraction < 0.95 && attempts < maxtries) {
         fraction = move_group->computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
         attempts++;
         if (attempts % 10 == 0) {

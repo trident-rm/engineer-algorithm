@@ -25,7 +25,7 @@ def generate_launch_description():
     )
 
     debug_node = Node(
-        package='z_plan',
+        package='plan',
         executable='gravity_comp_debug',
         name='gravity_comp_debug',
         output='screen',

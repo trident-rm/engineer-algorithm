@@ -89,7 +89,7 @@ def generate_launch_description():
     # RViz Simulation Node
     # ============================================================================
     rviz_simulation = Node(
-        package='z_plan',
+        package='plan',
         executable='rviz_simulation',
         name='rviz_simulation',
         output='screen',

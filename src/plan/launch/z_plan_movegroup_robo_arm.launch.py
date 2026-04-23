@@ -86,7 +86,7 @@ def generate_launch_description():
     )
 
     z_plan_movegroup_robo_arm = Node(
-        package='z_plan',
+        package='plan',
         executable='z_plan_movegroup_robo_arm',
         name='z_plan_movegroup_robo_arm',
         output='screen',

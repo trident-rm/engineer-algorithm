@@ -93,7 +93,7 @@ Total : 99 files,  6015 codes, 497 comments, 793 blanks, all 7305 lines
 | [src/robo\_arm\_description/launch/display.launch.py](/src/robo_arm_description/launch/display.launch.py) | Python | 37 | 5 | 7 | 49 |
 | [src/robo\_arm\_description/package.xml](/src/robo_arm_description/package.xml) | XML | 18 | 0 | 5 | 23 |
 | [src/robo\_arm\_description/src/end\_effector\_position.cpp](/src/robo_arm_description/src/end_effector_position.cpp) | C++ | 97 | 10 | 19 | 126 |
-| [src/z\_plan/CMakeLists.txt](/src/z_plan/CMakeLists.txt) | CMake | 122 | 0 | 15 | 137 |
+| [src/z\_plan/CMakeLists.txt](/src//CMakeLists.txt) | CMake | 122 | 0 | 15 | 137 |
 | [src/z\_plan/config/move\_group.yaml](/src/z_plan/config/move_group.yaml) | YAML | 23 | 0 | 1 | 24 |
 | [src/z\_plan/include/usb\_data.hpp](/src/z_plan/include/usb_data.hpp) | C++ | 75 | 0 | 8 | 83 |
 | [src/z\_plan/include/utils.hpp](/src/z_plan/include/utils.hpp) | C++ | 39 | 66 | 13 | 118 |

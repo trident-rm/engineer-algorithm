@@ -31,7 +31,7 @@ def generate_launch_description():
     
     # real_world_new 节点
     real_world_node = Node(
-        package='z_plan',
+        package='plan',
         executable='real_world_new',
         name='real_world_node',
         output='screen',

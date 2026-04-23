@@ -78,10 +78,10 @@ def generate_launch_description():
 		parameters=[moveit_config.to_dict()],
 	)
 
-	half_auto_up_node = Node(
-		package='z_plan',
-		executable='half_auto_up',
-		name='half_auto_up',
+	key_step_control_node = Node(
+		package='plan',
+		executable='key_step_control',
+		name='key_step_control',
 		output='screen',
 		parameters=[
 			moveit_config.robot_description,
@@ -98,5 +98,5 @@ def generate_launch_description():
 		arm_controller_spawner,
 		move_group_node,
 		rviz,
-		half_auto_up_node,
+		key_step_control_node,
 	])

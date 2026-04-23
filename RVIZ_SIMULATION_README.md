@@ -38,7 +38,7 @@
 ros2 launch panda_moveit_config moveit_rviz.launch.py
 
 # 在另一个终端启动仿真控制器
-ros2 run z_plan rviz_simulation
+ros2 run plan rviz_simulation
 ```
 
 ### 2. 在 RViz 中操作

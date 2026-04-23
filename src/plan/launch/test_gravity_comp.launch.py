@@ -46,7 +46,7 @@ def generate_launch_description():
 
     # Test node
     test_node = Node(
-        package='z_plan',
+        package='plan',
         executable='test_gravity_comp',
         name='test_gravity_comp',
         output='screen',
