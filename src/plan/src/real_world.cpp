@@ -14,7 +14,7 @@
 #include <cmath>
 #include <mutex>
 #include "utils.hpp"
-#include "usb_data.hpp"
+#include "tools/usb_data.hpp"
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("z_plan_real_world");
 
@@ -52,10 +52,6 @@ int main(int argc, char** argv){
     rclcpp::executors::SingleThreadedExecutor executor;
     executor.add_node(move_group_node);
     executor.add_node(serial_node);
-    
-    std::thread receive_thread([serial_node]() {
-        serial_node->receive_data();
-    });
 
     static const std::string PLANNING_GROUP = "arm";
     
@@ -392,10 +388,6 @@ int main(int argc, char** argv){
     RCLCPP_INFO(LOGGER, "Shutting down...");
     rclcpp::shutdown();
     
-    // 等待接收线程结束
-    if (receive_thread.joinable()) {
-        receive_thread.join();
-    }
-    
     return 0;
-}
+
+    }

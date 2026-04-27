@@ -1,13 +1,16 @@
 #include <rclcpp/rclcpp.hpp>
-#include "usb_data.hpp"
+#include <thread>
+#include "tools/usb_data.hpp"
 
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
     auto serial_node = std::make_shared<SerialRxNode>();
-
-    std::thread([serial_node]() {
-        serial_node->receive_data();
-    }).detach();
+    rclcpp::executors::SingleThreadedExecutor executor;
+    executor.add_node(serial_node);
+    
+    std::thread executor_thread([&executor]() { 
+        executor.spin(); 
+    });
 
     rclcpp::Rate rate(50.0);
     
@@ -27,6 +30,8 @@ int main(int argc, char** argv) {
         counter++;
         rate.sleep();
     }
+    
     rclcpp::shutdown();
+    executor_thread.join(); 
     return 0;
 }

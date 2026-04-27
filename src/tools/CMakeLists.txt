@@ -15,12 +15,13 @@ find_package(moveit_ros_planning_interface REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(tf2_eigen REQUIRED)
+find_package(serial REQUIRED)
 
 # Include directories
 include_directories(include)
 
 # Create shared library
-add_library(tools SHARED src/tools.cpp)
+add_library(tools SHARED src/usb_data.cpp)
 
 ament_target_dependencies(tools
   rclcpp
@@ -30,6 +31,7 @@ ament_target_dependencies(tools
   moveit_ros_planning_interface
   moveit_core
   tf2_eigen
+  serial
 )
 
 target_link_libraries(tools Eigen3::Eigen)
@@ -42,11 +44,11 @@ install(TARGETS tools
 )
 
 # Install headers
-install(DIRECTORY include/tools
-  DESTINATION include
+install(FILES include/usb_data.hpp
+  DESTINATION include/tools
 )
 
-# Export library
+# Export library for ament
 ament_export_libraries(tools)
 ament_export_include_directories(include)
 ament_export_dependencies(
@@ -58,6 +60,7 @@ ament_export_dependencies(
   moveit_core
   tf2_eigen
   Eigen3
+  serial
 )
 
 ament_package()

@@ -63,7 +63,7 @@ public:
     std::vector<float> get_controller_angles() const;
     std::vector<float> get_joint_currents() const;
     uint8_t get_control_mode() const;
-    void receive_data();
+    
     void print_joint_angles() const;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr get_publisher() const;
 
@@ -71,12 +71,14 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pub_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr robo_arm_pub_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr controller_pub_;
+    rclcpp::TimerBase::SharedPtr read_timer_; 
+    void read_serial_callback();
     std::vector<uint8_t> buffer_;
     serial::Serial serial_;
     const uint8_t EXPECTED_SOF = 0x91;
-    std::vector<float> joint_angle_{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    std::vector<float> joint_angle_{-0.0116f, -0.2577f, 1.00f, -3.1592f, 6.4611f, -1.5546f};
     std::vector<float> joint_current_{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-    std::vector<float> robo_arm_angle_{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    std::vector<float> robo_arm_angle_{1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     std::vector<float> controller_angle_{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     uint8_t control_mode_{0};
     

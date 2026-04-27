@@ -27,6 +27,11 @@ find_package(interactive_markers REQUIRED)
 
 # Include directories
 include_directories(include)
+# Directly include tools headers from installed location
+include_directories(/home/hku/robo_arm/install/tools/include)
+
+# Link to tools library built by colcon  
+link_directories(/home/hku/robo_arm/install/tools/lib)
 
 # 添加工具库
 add_library(utils SHARED src/utils.cpp)
@@ -46,29 +51,9 @@ install(TARGETS utils
 )
 ament_export_libraries(utils)
 
-if(serial_FOUND)
-  message(STATUS "serial library found - building hardware targets")
-
-  add_library(usb_data SHARED src/usb_data.cpp)
-  ament_target_dependencies(usb_data
-    rclcpp
-    moveit_msgs
-    trajectory_msgs
-    serial
-  )
-  install(TARGETS usb_data
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-    RUNTIME DESTINATION bin
-  )
-  ament_export_libraries(usb_data)
-else()
-  message(WARNING "serial library NOT found - hardware targets (real_world, read_data) will not be built")
-endif()
-
 # Add executable for TURN half-circle planning mode
 add_executable(turn_movegroup src/turn_movegroup.cpp)
-target_link_libraries(turn_movegroup utils)
+target_link_libraries(turn_movegroup utils tools)
 ament_target_dependencies(turn_movegroup
   rclcpp
   geometry_msgs
@@ -76,6 +61,7 @@ ament_target_dependencies(turn_movegroup
   moveit_visual_tools
   moveit_msgs
   trajectory_msgs
+  serial
 )
 
 # Add executable for retreat Cartesian path test
@@ -92,7 +78,7 @@ ament_target_dependencies(turn_retreat
 
 # Add executable for half-auto up interactive test
 add_executable(key_step_control src/key_step_control.cpp)
-target_link_libraries(key_step_control utils)
+target_link_libraries(key_step_control utils tools)
 ament_target_dependencies(key_step_control
   rclcpp
   geometry_msgs
@@ -105,7 +91,7 @@ ament_target_dependencies(key_step_control
 if(serial_FOUND)
   # Add executable for real world situation
   add_executable(real_world src/real_world.cpp)
-  target_link_libraries(real_world utils usb_data pinocchio::pinocchio)
+  target_link_libraries(real_world utils tools pinocchio::pinocchio)
   ament_target_dependencies(real_world
     rclcpp
     geometry_msgs
@@ -119,7 +105,7 @@ if(serial_FOUND)
 
   # Add executable for real world new (controller-based control)
   add_executable(real_world_new src/real_world_new.cpp)
-  target_link_libraries(real_world_new utils usb_data pinocchio::pinocchio)
+  target_link_libraries(real_world_new utils tools pinocchio::pinocchio)
   ament_target_dependencies(real_world_new
     rclcpp
     geometry_msgs
@@ -133,7 +119,8 @@ if(serial_FOUND)
     control_msgs
   )
 
-  add_executable(read_data src/read_data_test.cpp src/usb_data.cpp)
+  add_executable(read_data src/read_data_test.cpp)
+  target_link_libraries(read_data tools)
   ament_target_dependencies(read_data
     rclcpp
     sensor_msgs
@@ -155,37 +142,8 @@ ament_target_dependencies(test_constraint
   moveit_core
 )
 
-# RViz-based simulation control node (no hardware dependency)
-add_executable(rviz_simulation src/rviz_simulation.cpp)
-target_link_libraries(rviz_simulation utils pinocchio::pinocchio)
-ament_target_dependencies(rviz_simulation
-  rclcpp
-  geometry_msgs
-  moveit_ros_planning_interface
-  moveit_visual_tools
-  moveit_msgs
-  moveit_core
-  interactive_markers
-  std_srvs
-)
 
-# Test node for gravity compensation comparison (no hardware dependency)
-set(GRAVITY_COMP_C_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/generated/gravity_comp.c)
-if(EXISTS ${GRAVITY_COMP_C_FILE})
-  add_executable(test_gravity_comp
-    src/test_gravity_comp.cpp
-    ${GRAVITY_COMP_C_FILE}
-  )
-  target_link_libraries(test_gravity_comp utils pinocchio::pinocchio)
-  ament_target_dependencies(test_gravity_comp
-    rclcpp
-    moveit_ros_planning_interface
-    moveit_msgs
-    moveit_core
-  )
-else()
-  message(STATUS "gravity_comp.c not found, skipping target: test_gravity_comp")
-endif()
+
 
 # Install executables
 set(_install_targets
@@ -193,11 +151,8 @@ set(_install_targets
   turn_retreat
   key_step_control
   test_constraint
-  rviz_simulation
 )
-if(TARGET test_gravity_comp)
-  list(APPEND _install_targets test_gravity_comp)
-endif()
+
 if(serial_FOUND)
   # Gravity compensation debug node (requires serial)
   if(EXISTS ${GRAVITY_COMP_C_FILE})
@@ -205,7 +160,7 @@ if(serial_FOUND)
       src/gravity_comp_debug.cpp
       ${GRAVITY_COMP_C_FILE}
     )
-    target_link_libraries(gravity_comp_debug utils usb_data pinocchio::pinocchio)
+    target_link_libraries(gravity_comp_debug utils tools pinocchio::pinocchio)
     ament_target_dependencies(gravity_comp_debug
       rclcpp
       sensor_msgs

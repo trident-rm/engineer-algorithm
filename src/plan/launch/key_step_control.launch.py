@@ -8,6 +8,7 @@ import os
 def generate_launch_description():
 	moveit_config = MoveItConfigsBuilder("robo_arm10", package_name="robo_arm10_moveit_config").to_moveit_configs()
 
+
 	robot_state_publisher = Node(
 		package='robot_state_publisher',
 		executable='robot_state_publisher',
@@ -16,39 +17,39 @@ def generate_launch_description():
 		parameters=[moveit_config.robot_description],
 	)
 
-	ros2_control_node = Node(
-		package="controller_manager",
-		executable="ros2_control_node",
-		parameters=[
-			moveit_config.robot_description,
-			os.path.join(
-				get_package_share_directory("robo_arm10_moveit_config"),
-				"config",
-				"ros2_controllers.yaml",
-			),
-		],
-		output="screen",
-	)
+	# ros2_control_node = Node(
+	# 	package="controller_manager",
+	# 	executable="ros2_control_node",
+	# 	parameters=[
+	# 		moveit_config.robot_description,
+	# 		os.path.join(
+	# 			get_package_share_directory("robo_arm10_moveit_config"),
+	# 			"config",
+	# 			"ros2_controllers.yaml",
+	# 		),
+	# 	],
+	# 	output="screen",
+	# )
 
-	joint_state_broadcaster_spawner = Node(
-		package="controller_manager",
-		executable="spawner",
-		arguments=[
-			"joint_state_broadcaster",
-			"--controller-manager",
-			"/controller_manager",
-		],
-	)
+	# joint_state_broadcaster_spawner = Node(
+	# 	package="controller_manager",
+	# 	executable="spawner",
+	# 	arguments=[
+	# 		"joint_state_broadcaster",
+	# 		"--controller-manager",
+	# 		"/controller_manager",
+	# 	],
+	# )
 
-	arm_controller_spawner = Node(
-		package="controller_manager",
-		executable="spawner",
-		arguments=[
-			"arm_controller",
-			"--controller-manager",
-			"/controller_manager",
-		],
-	)
+	# arm_controller_spawner = Node(
+	# 	package="controller_manager",
+	# 	executable="spawner",
+	# 	arguments=[
+	# 		"arm_controller",
+	# 		"--controller-manager",
+	# 		"/controller_manager",
+	# 	],
+	# )
 
 	rviz_config_file = os.path.join(
 		get_package_share_directory('robo_arm10_moveit_config'),
@@ -93,9 +94,6 @@ def generate_launch_description():
 
 	return LaunchDescription([
 		robot_state_publisher,
-		ros2_control_node,
-		joint_state_broadcaster_spawner,
-		arm_controller_spawner,
 		move_group_node,
 		rviz,
 		key_step_control_node,

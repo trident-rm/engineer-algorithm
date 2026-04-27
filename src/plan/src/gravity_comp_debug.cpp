@@ -19,7 +19,7 @@
 #include <atomic>
 #include <vector>
 #include "utils.hpp"
-#include "usb_data.hpp"
+#include "tools/usb_data.hpp"
 
 extern "C" {
     void compute_gravity_torques(const float q[6], float tau[6]);
@@ -73,7 +73,7 @@ public:
 private:
     void timer_callback() {
         // Read serial
-        serial_node_->receive_data();
+        //serial_node_->read_serial_callback();
         auto raw = serial_node_->get_robo_arm_angles();
         if (raw.size() != 6) return;
 

@@ -878,7 +878,7 @@ std::vector<double> direction_constraint(
 
 moveit_msgs::msg::RobotTrajectory plan_half_circle_turn(geometry_msgs::msg::Pose start_pose, double radius, int num_points, Eigen::Vector3d normal_direction, Eigen::Vector3d e_hat_direction, std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group){
     std::vector<geometry_msgs::msg::Pose> waypoints;
-    const double angle_range = -M_PI/6;
+    const double angle_range = -M_PI/2;
 
     Eigen::Vector3d start_pos(
         start_pose.position.x,
@@ -976,6 +976,56 @@ moveit_msgs::msg::RobotTrajectory plan_half_circle_turn(geometry_msgs::msg::Pose
     }
     return trajectory;
 
+}
+
+std::vector<float> convert_urdf_to_hardware(const std::vector<float>& urdf_angles) {
+    std::vector<float> hardware_angles(urdf_angles.begin(), urdf_angles.end());
+    if (hardware_angles.size() < 6) return hardware_angles;
+    hardware_angles[0] = urdf_angles[0];
+    hardware_angles[1] = -urdf_angles[1];
+    hardware_angles[2] = -urdf_angles[2];
+    hardware_angles[3] = -urdf_angles[3];
+    hardware_angles[4] = urdf_angles[4] - M_PI;
+    hardware_angles[5] = -urdf_angles[5];
+    return hardware_angles;
+}
+
+std::vector<float> convert_urdf_to_hardware(const std::vector<double>& urdf_angles) {
+    std::vector<float> hardware_angles(urdf_angles.begin(), urdf_angles.end());
+    if (hardware_angles.size() < 6) return hardware_angles;
+    hardware_angles[0] = static_cast<float>(urdf_angles[0]);
+    hardware_angles[1] = static_cast<float>(-urdf_angles[1]);
+    hardware_angles[2] = static_cast<float>(-urdf_angles[2]);
+    hardware_angles[3] = static_cast<float>(-urdf_angles[3]);
+    hardware_angles[4] = static_cast<float>(urdf_angles[4] - M_PI);
+    hardware_angles[5] = static_cast<float>(-urdf_angles[5]);
+    return hardware_angles;
+}
+
+std::vector<double> convert_hardware_to_urdf(const std::vector<float>& hardware_angles) {
+    std::vector<double> urdf_angles(hardware_angles.begin(), hardware_angles.end());
+    if (urdf_angles.size() < 6) return urdf_angles;
+
+    urdf_angles[0] = hardware_angles[0];
+    urdf_angles[1] = -hardware_angles[1];
+    urdf_angles[2] = -hardware_angles[2];
+    urdf_angles[3] = -hardware_angles[3];
+    urdf_angles[4] = hardware_angles[4] + M_PI;
+    urdf_angles[5] = -hardware_angles[5];
+    return urdf_angles;
+}
+
+std::vector<double> convert_hardware_to_urdf(const std::vector<double>& hardware_angles) {
+    std::vector<double> urdf_angles = hardware_angles;
+    if (urdf_angles.size() < 6) return urdf_angles;
+
+    urdf_angles[0] = hardware_angles[0];
+    urdf_angles[1] = -hardware_angles[1];
+    urdf_angles[2] = -hardware_angles[2];
+    urdf_angles[3] = -hardware_angles[3];
+    urdf_angles[4] = hardware_angles[4] + M_PI;
+    urdf_angles[5] = -hardware_angles[5];
+    return urdf_angles;
 }
 
 

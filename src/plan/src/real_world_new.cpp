@@ -30,7 +30,7 @@
 #include <cstdlib>
 #include <ctime>
 #include "utils.hpp"
-#include "usb_data.hpp"
+#include "tools/usb_data.hpp"
 #include <moveit_visual_tools/moveit_visual_tools.h>
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("real_world_new");
@@ -103,6 +103,7 @@ public:
         
         end_effector_link_ = move_group_->getEndEffectorLink();
         joint_names_ = joint_model_group_->getActiveJointModelNames();
+        move_group_->setEndEffectorLink("gripper");  // 明确设置末端执行器为 gripper
         
         RCLCPP_INFO(LOGGER, "Planning group: %s, End effector: %s", 
                     planning_group.c_str(), end_effector_link_.c_str());
@@ -1250,34 +1251,12 @@ private:
     /**
      * @brief 下位机角度 -> URDF 角度转换
      */
-    std::vector<double> convert_hardware_to_urdf(const std::vector<double>& hardware_angles) {
-        std::vector<double> urdf_angles = hardware_angles;
-        if (urdf_angles.size() < 6) return urdf_angles;
-
-        urdf_angles[0] = hardware_angles[0];
-        urdf_angles[1] = -hardware_angles[1];
-        urdf_angles[2] = -hardware_angles[2];
-        urdf_angles[3] = -hardware_angles[3];
-        urdf_angles[4] = hardware_angles[4] + M_PI;
-        urdf_angles[5] = -hardware_angles[5];
-        return urdf_angles;
-    }
+    // 已移动到 utils.cpp 中的全局函数
 
     /**
      * @brief URDF 角度 → 下位机角度转换
      */
-    std::vector<float> convert_urdf_to_hardware(const std::vector<double>& urdf_angles) {
-        std::vector<float> hardware_angles(urdf_angles.begin(), urdf_angles.end());
-        if (hardware_angles.size() < 6) return hardware_angles;
-
-        hardware_angles[0] = static_cast<float>(urdf_angles[0]);
-        hardware_angles[1] = static_cast<float>(-urdf_angles[1]);
-        hardware_angles[2] = static_cast<float>(-urdf_angles[2]);
-        hardware_angles[3] = static_cast<float>(-urdf_angles[3]);
-        hardware_angles[4] = static_cast<float>(urdf_angles[4] - M_PI);
-        hardware_angles[5] = static_cast<float>(-urdf_angles[5]);
-        return hardware_angles;
-    }
+    // 已移动到 utils.cpp 中的全局函数
 
     // 成员变量
     rclcpp::Node::SharedPtr node_;
@@ -1366,11 +1345,6 @@ int main(int argc, char** argv) {
             executor.spin_some(std::chrono::milliseconds(10));
         }
     });
-    
-    // 启动串口接收线程
-    std::thread receive_thread([serial_node]() {
-        serial_node->receive_data();
-    });
 
     // 等待 MoveGroup 初始化（给足够的时间）
     RCLCPP_INFO(LOGGER, "Waiting for MoveGroup to initialize...");
@@ -1394,11 +1368,7 @@ int main(int argc, char** argv) {
     if (executor_thread.joinable()) {
         executor_thread.join();
     }
-    
-    if (receive_thread.joinable()) {
-        receive_thread.join();
-    }
-    
+  
     rclcpp::shutdown();
     return 0;
 }

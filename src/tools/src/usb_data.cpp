@@ -49,7 +49,7 @@ const uint16_t wCRC_table[256] =
 
 SerialRxNode::SerialRxNode() : Node("simple_robot_receiver"){
     // 声明和获取串口参数
-    this->declare_parameter<std::string>("serial_port", "/dev/ttyUSB0");
+    this->declare_parameter<std::string>("serial_port", "/dev/ttyACM0");
     this->declare_parameter<int>("baudrate", 115200);
     
     std::string port = this->get_parameter("serial_port").as_string();
@@ -77,6 +77,8 @@ SerialRxNode::SerialRxNode() : Node("simple_robot_receiver"){
         "/robo_arm_joint_states", 10);
     controller_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(
         "/controller_joint_states", 10);
+    
+    read_timer_ = this->create_wall_timer(10ms, std::bind(&SerialRxNode::read_serial_callback, this));
 }
 
 std::vector<float> SerialRxNode::get_joint_angles() const {
@@ -109,10 +111,10 @@ void SerialRxNode::send_roboarm_with_controller(const std::vector<float>& curren
     data.SOF = EXPECTED_SOF;
     
     // 将 float 角度转换为 int16_t：角度（弧度）* 10000
-    // 对于 joint4 和 joint5 (索引3和4)，需要乘以10000后-29000
+    // 对于 joint4 和 joint5 (索引3和4)，需要乘以10000后-31000
     for (int i = 0; i < 6; ++i) {
         if (i == 3 || i == 4) {
-            data.robo_arm_joint_theta[i] = static_cast<int16_t>(robo_arm_angles[i] * 10000.0f - 29000.0f);
+            data.robo_arm_joint_theta[i] = static_cast<int16_t>(robo_arm_angles[i] * 10000.0f - 31000.0f);
         } else {
             data.robo_arm_joint_theta[i] = static_cast<int16_t>(robo_arm_angles[i] * 10000.0f);
         }
@@ -133,84 +135,29 @@ void SerialRxNode::send_roboarm_with_controller(const std::vector<float>& curren
 }
 
 #include <chrono>
-
-void SerialRxNode::receive_data(){
-    RCLCPP_INFO(this->get_logger(), "receive_data thread started");
-    
-    // 统计信息
-    size_t total_bytes_received = 0;
-    auto last_stat_time = std::chrono::steady_clock::now();
-    size_t idle_counter = 0;
-    
-    while(rclcpp::ok()){
-        try {
-            // 检查串口是否打开
-            if (!serial_.isOpen()) {
-                RCLCPP_WARN(get_logger(), "Serial port not open, sleeping...");
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-                continue;
-            }
-            
-            // 检查是否有数据
-            if(serial_.available()){
-                RCLCPP_DEBUG(this->get_logger(), "Serial data available");
-                size_t n = serial_.available();
-                if (n > 0) {
-                    std::string raw_data = serial_.read(n);
-                    std::vector<uint8_t> new_data(raw_data.begin(), raw_data.end());
-                    buffer_.insert(buffer_.end(), new_data.begin(), new_data.end());
-                    
-                    total_bytes_received += n;
-                    
-                    // 限制日志频率：每500ms最多一次
-                    auto now = std::chrono::steady_clock::now();
-                    static auto last_log_time = now;
-                    if (now - last_log_time > std::chrono::milliseconds(500)) {
-                        RCLCPP_DEBUG(this->get_logger(), "Received %zu bytes, total: %zu, buffer: %zu", 
-                                    n, total_bytes_received, buffer_.size());
-                        last_log_time = now;
-                    }
-                    
-                    process_buffer();
-                    
-                    // 重置空闲计数器
-                    idle_counter = 0;
-                }
-            } else {
-                // 动态调整睡眠时间：空闲越久，睡眠越长
-                size_t sleep_ms = 10;
-                if (idle_counter > 1000) sleep_ms = 100;      // 空闲10秒后
-                else if (idle_counter > 100) sleep_ms = 50;   // 空闲1秒后
-                
-                std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
-                idle_counter++;
-                
-                // 每10秒打印一次空闲状态
-                if (idle_counter % (10000 / sleep_ms) == 0) {  // 约10秒
-                    RCLCPP_DEBUG(this->get_logger(), 
-                               "Idle for %.1f seconds, buffer size: %zu, total received: %zu bytes",
-                               idle_counter * sleep_ms / 1000.0, 
-                               buffer_.size(),
-                               total_bytes_received);
-                }
-            }
-            
-            // 定期打印统计信息（每30秒）
-            auto now = std::chrono::steady_clock::now();
-            if (now - last_stat_time > std::chrono::seconds(30)) {
-                RCLCPP_DEBUG(get_logger(), 
-                           "Serial statistics - Total bytes: %zu, Buffer size: %zu, Idle counter: %zu",
-                           total_bytes_received, buffer_.size(), idle_counter);
-                last_stat_time = now;
-            }
-            
-        } catch (const std::exception& e) {
-            RCLCPP_ERROR(get_logger(), "Exception in receive_data: %s", e.what());
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+void SerialRxNode::read_serial_callback() {
+    try {
+        if (!serial_.isOpen()) {
+            RCLCPP_DEBUG(get_logger(), "Serial port not open");
+            return; 
         }
+        
+        if(serial_.available()){
+            size_t n = serial_.available();
+            if (n > 0) {
+                std::string raw_data = serial_.read(n);
+                std::vector<uint8_t> new_data(raw_data.begin(), raw_data.end());
+                buffer_.insert(buffer_.end(), new_data.begin(), new_data.end());
+                
+                RCLCPP_DEBUG(this->get_logger(), "Received %zu bytes, buffer size: %zu", 
+                            n, buffer_.size());
+                
+                process_buffer();
+            }
+        }
+    } catch (const std::exception& e) {
+        RCLCPP_ERROR(get_logger(), "Exception in read_serial_callback: %s", e.what());
     }
-    
-    RCLCPP_INFO(this->get_logger(), "receive_data thread stopped");
 }
 
 void SerialRxNode::print_joint_angles() const {
@@ -299,10 +246,12 @@ void SerialRxNode::parse_buffer(const std::vector<uint8_t>& packet){
         for(int i = 0; i < 6; ++i){
             if (i == 3 || i == 4) {
                 // joint4 和 joint5: (接收值 / 10000) + 2.9
-                robo_arm_angle_[i] = static_cast<float>(rx_data.robo_arm_joint_theta[i]) / 10000.0f + 2.9f;
-                controller_angle_[i] = static_cast<float>(rx_data.controller_joint_theta[i]) / 10000.0f + 2.9f;
+                joint_angle_[i] = static_cast<float>(rx_data.robo_arm_joint_theta[i]) / 10000.0f + 3.1f;
+                robo_arm_angle_[i] = static_cast<float>(rx_data.robo_arm_joint_theta[i]) / 10000.0f + 3.1f;
+                controller_angle_[i] = static_cast<float>(rx_data.controller_joint_theta[i]) / 10000.0f + 3.1f;
             } else {
                 // 其他关节: 接收值 / 10000
+                joint_angle_[i] = static_cast<float>(rx_data.robo_arm_joint_theta[i]) / 10000.0f;
                 robo_arm_angle_[i] = static_cast<float>(rx_data.robo_arm_joint_theta[i]) / 10000.0f;
                 controller_angle_[i] = static_cast<float>(rx_data.controller_joint_theta[i]) / 10000.0f;
             }
@@ -323,10 +272,20 @@ void SerialRxNode::publish_joint_states(const std::vector<uint8_t>& packet){
     if (packet.size() == sizeof(roboarm_with_controller_rx_t)) {
         auto timestamp = this->now();
         
-        // 应用滤波和坐标转换（与 real_world_new.cpp 中一致）
+        // 应用滤波
         std::vector<double> filtered_angles = robo_filter_.filter(robo_arm_angle_);
-        filtered_angles[1] = -filtered_angles[1];
-        filtered_angles[4] = 6.28 - filtered_angles[4];
+        
+        // 应用统一的坐标转换（与 utils.cpp::convert_hardware_to_urdf 一致）
+        std::vector<double> converted_angles(filtered_angles.size());
+        if (filtered_angles.size() >= 6) {
+            converted_angles[0] = filtered_angles[0];
+            converted_angles[1] = -filtered_angles[1];
+            converted_angles[2] = -filtered_angles[2];
+            converted_angles[3] = -filtered_angles[3];
+            converted_angles[4] = filtered_angles[4] + M_PI;
+            converted_angles[5] = -filtered_angles[5];
+        }
+        filtered_angles = converted_angles;
         
         // 发布标准 /joint_states (供 robot_state_publisher 使用，发布 TF)
         auto joint_msg = sensor_msgs::msg::JointState();

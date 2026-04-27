@@ -167,4 +167,20 @@ moveit_msgs::msg::RobotTrajectory plan_retreat(
     double retreat_distance,
     std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group);
 
+/**
+ * @brief  URDF 角度 → 下位机角度转换
+ * @param  urdf_angles  URDF 坐标系下的关节角度
+ * @retval std::vector<float> 硬件坐标系下的关节角度
+ */
+std::vector<float> convert_urdf_to_hardware(const std::vector<float>& urdf_angles);
+std::vector<float> convert_urdf_to_hardware(const std::vector<double>& urdf_angles);
+
+/**
+ * @brief  下位机角度 → URDF 角度转换
+ * @param  hardware_angles  硬件坐标系下的关节角度
+ * @retval std::vector<double> URDF 坐标系下的关节角度
+ */
+std::vector<double> convert_hardware_to_urdf(const std::vector<float>& hardware_angles);
+std::vector<double> convert_hardware_to_urdf(const std::vector<double>& hardware_angles);
+
 #endif
