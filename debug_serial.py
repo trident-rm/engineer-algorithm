@@ -2,7 +2,7 @@
 import serial
 import sys
 
-def read_serial_data(port="/dev/ttyACM0", baudrate=115200, timeout=2):
+def read_serial_data(port="/dev/ttyACM1", baudrate=115200, timeout=2):
     """
     读取串口数据并以16进制和10进制显示
     """
@@ -44,7 +44,7 @@ def read_serial_data(port="/dev/ttyACM0", baudrate=115200, timeout=2):
         ser.close()
 
 if __name__ == "__main__":
-    port = "/dev/ttyACM0"
+    port = "/dev/ttyACM1"
     if len(sys.argv) > 1:
         port = sys.argv[1]
     

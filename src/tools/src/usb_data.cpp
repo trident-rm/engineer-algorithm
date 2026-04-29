@@ -49,7 +49,7 @@ const uint16_t wCRC_table[256] =
 
 SerialRxNode::SerialRxNode() : Node("simple_robot_receiver"){
     // 声明和获取串口参数
-    this->declare_parameter<std::string>("serial_port", "/dev/ttyACM0");
+    this->declare_parameter<std::string>("serial_port", "/dev/ttyACM1");
     this->declare_parameter<int>("baudrate", 115200);
     
     std::string port = this->get_parameter("serial_port").as_string();

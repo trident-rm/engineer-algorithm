@@ -37,7 +37,8 @@ enum SerialControlMode {
     SERIAL_MODE_FORWARD = 6,
     SERIAL_MODE_BACKWARD = 7,
     SERIAL_MODE_PUSH = 8,
-    SERIAL_MODE_PULL = 9
+    SERIAL_MODE_PULL = 9,
+    SERIAL_MODE_TURN = 10
 };
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("key_step_control");
@@ -65,7 +66,39 @@ void send_trajectory_to_serial(
     for (size_t i = 0; i < points.size(); ++i) {
         const auto& point = points[i];
         std::vector<float> frame_angles(point.positions.begin(), point.positions.end());
-        serial_node->send_roboarm_with_controller(torques, convert_urdf_to_hardware(frame_angles));
+        
+        // 打印 torques 的16进制形式
+        std::string torques_hex = "Torques (hex): ";
+        for (size_t j = 0; j < torques.size(); ++j) {
+            char hex_buf[16];
+            uint32_t bits = *reinterpret_cast<uint32_t*>(&torques[j]);
+            snprintf(hex_buf, sizeof(hex_buf), "%08x ", bits);
+            torques_hex += hex_buf;
+        }
+        RCLCPP_INFO(LOGGER, "%s", torques_hex.c_str());
+        
+        // 打印 frame_angles 的16进制形式
+        std::string angles_hex = "Frame angles (hex): ";
+        for (size_t j = 0; j < frame_angles.size(); ++j) {
+            char hex_buf[16];
+            uint32_t bits = *reinterpret_cast<uint32_t*>(&frame_angles[j]);
+            snprintf(hex_buf, sizeof(hex_buf), "%08x ", bits);
+            angles_hex += hex_buf;
+        }
+        RCLCPP_INFO(LOGGER, "%s", angles_hex.c_str());
+        
+        // 打印转换后的硬件数据
+        auto hw_angles = convert_urdf_to_hardware(frame_angles);
+        std::string hw_hex = "Hardware angles (hex): ";
+        for (size_t j = 0; j < hw_angles.size(); ++j) {
+            char hex_buf[16];
+            uint32_t bits = *reinterpret_cast<uint32_t*>(&hw_angles[j]);
+            snprintf(hex_buf, sizeof(hex_buf), "%08x ", bits);
+            hw_hex += hex_buf;
+        }
+        RCLCPP_INFO(LOGGER, "%s", hw_hex.c_str());
+        
+        serial_node->send_roboarm_with_controller(torques, hw_angles);
         
         RCLCPP_DEBUG(LOGGER, "Sent trajectory frame %zu/%zu", i + 1, points.size());
         std::this_thread::sleep_for(std::chrono::milliseconds(frame_interval_ms));
@@ -122,6 +155,7 @@ void execute_home(
     move_group->setJointValueTarget(RESET_JOINT_VALUES);
     moveit::planning_interface::MoveGroupInterface::Plan plan;
     if (move_group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+            RCLCPP_INFO(LOGGER, "HOME execution started");
             //move_group->execute(plan);
             send_trajectory_to_serial(plan.trajectory, serial_node, 50);
             return;
@@ -237,6 +271,13 @@ int main(int argc, char** argv){
         execute_single_move(move_group, joint_model_group, "BACKWARD", visual_tools, serial_node);
         break;
       }
+
+      case SERIAL_MODE_TURN: {
+        RCLCPP_INFO(LOGGER, "Received TURN command");
+        break;
+      }
+
+
       default:
         break;
     }
