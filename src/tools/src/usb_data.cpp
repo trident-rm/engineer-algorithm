@@ -139,6 +139,7 @@ void SerialRxNode::read_serial_callback() {
     try {
         if (!serial_.isOpen()) {
             RCLCPP_DEBUG(get_logger(), "Serial port not open");
+            publish_joint_states(joint_angle_); 
             return; 
         }
         
@@ -313,6 +314,18 @@ void SerialRxNode::publish_joint_states(const std::vector<uint8_t>& packet){
     } else {
         RCLCPP_WARN(this->get_logger(), "Unknown packet size for publishing: %zu", packet.size());
     }
+}
+
+void SerialRxNode::publish_joint_states(const std::vector<float>& joint_angles){
+    auto timestamp = this->now();
+    std::vector<double> positions(joint_angles.begin(), joint_angles.end());
+
+    auto joint_msg = sensor_msgs::msg::JointState();
+    joint_msg.header.stamp = timestamp;
+    joint_msg.name = {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"};
+    joint_msg.position = positions;
+    joint_pub_->publish(joint_msg);
+
 }
 
 uint16_t SerialRxNode::get_CRC16_check_sum(uint8_t *pch_message,uint32_t dw_length,uint16_t wCRC)

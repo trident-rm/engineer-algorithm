@@ -90,6 +90,7 @@ private:
     uint16_t get_CRC16_check_sum(uint8_t *pch_message,uint32_t dw_length,uint16_t wCRC);
     void parse_buffer(const std::vector<uint8_t>& packet);
     void publish_joint_states(const std::vector<uint8_t>& packet);
+    void publish_joint_states(const std::vector<float>& joint_angles);
 };
 
 #endif

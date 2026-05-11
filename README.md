@@ -17,3 +17,9 @@
 * **Robot files**
 
   The URDF model corresponding to the real-world robot is stored in `robo_arm6/`, along with corresponding SRDF files and configuration files for use with the MoveIt motion planning pipeline.
+
+
+pyroki版启动方式
+python3 ./src/plan/scripts/pyroki_ik_node.py
+ros2 launch plan pyroki_ik.launch.py
+ros2 launch plan control_with_pyroki.launch.py action:=1

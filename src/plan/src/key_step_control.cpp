@@ -229,6 +229,7 @@ int main(int argc, char** argv){
     //current_state->setJointGroupPositions(joint_model_group, joint_angles);
     //move_group->setStartState(*current_state);
     visual_tools.publishRobotState(*move_group->getCurrentState(), rviz_visual_tools::GREEN);
+    visual_tools.trigger();  
     
     uint8_t current_mode = serial_node->get_control_mode();
     RCLCPP_INFO(LOGGER, "Current control mode from serial: %d", current_mode);

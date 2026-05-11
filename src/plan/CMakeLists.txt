@@ -88,6 +88,19 @@ ament_target_dependencies(key_step_control
   trajectory_msgs
 )
 
+# Pyroki + MoveIt integration: subscribe /joint_states from pyroki_ik_node and run a chosen action
+add_executable(control_with_pyroki src/control_with_pyroki.cpp)
+target_link_libraries(control_with_pyroki utils)
+ament_target_dependencies(control_with_pyroki
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+  moveit_ros_planning_interface
+  moveit_visual_tools
+  moveit_msgs
+  trajectory_msgs
+)
+
 if(serial_FOUND)
   # Add executable for real world situation
   add_executable(real_world src/real_world.cpp)
@@ -150,6 +163,7 @@ set(_install_targets
   turn_movegroup
   turn_retreat
   key_step_control
+  control_with_pyroki
   test_constraint
 )
 
