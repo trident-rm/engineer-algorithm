@@ -83,3 +83,7 @@ pyroki版启动方式
 python3 ./src/plan/scripts/pyroki_ik_node.py
 ros2 launch plan pyroki_ik.launch.py
 ros2 launch plan control_with_pyroki.launch.py action:=1
+control_with_pyroki是测试单独的轨迹规划，例如只测试turn，或者只测试向上平移1cm这样。
+
+May11 Log
+修改了serialNode里的话题发布，serial没有打开时也会发送默认数据到话题

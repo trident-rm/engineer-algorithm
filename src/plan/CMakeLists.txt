@@ -24,6 +24,7 @@ find_package(pinocchio REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(interactive_markers REQUIRED)
+find_package(std_msgs REQUIRED)
 
 # Include directories
 include_directories(include)
@@ -116,6 +117,22 @@ if(serial_FOUND)
     tf2_eigen
   )
 
+add_executable(flow_with_pyroki src/flow_with_pyroki.cpp)
+ament_target_dependencies(flow_with_pyroki
+  rclcpp
+  sensor_msgs
+  std_msgs
+  geometry_msgs
+  moveit_ros_planning_interface
+  moveit_visual_tools
+  moveit_msgs
+)
+
+# Keyboard input node: reads stdin in raw mode and publishes /key_input (std_msgs/String).
+# Run with: ros2 run plan keyboard_input  (must be ros2 run, not launch)
+add_executable(keyboard_input src/keyboard_input.cpp)
+ament_target_dependencies(keyboard_input rclcpp std_msgs)
+
   # Add executable for real world new (controller-based control)
   add_executable(real_world_new src/real_world_new.cpp)
   target_link_libraries(real_world_new utils tools pinocchio::pinocchio)
@@ -165,6 +182,8 @@ set(_install_targets
   key_step_control
   control_with_pyroki
   test_constraint
+  flow_with_pyroki
+  keyboard_input
 )
 
 if(serial_FOUND)
