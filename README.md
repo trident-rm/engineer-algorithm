@@ -79,11 +79,27 @@
   
 
 
-pyroki版启动方式
+* **control_with_pyroki的启动方式**
 python3 ./src/plan/scripts/pyroki_ik_node.py
 ros2 launch plan pyroki_ik.launch.py
 ros2 launch plan control_with_pyroki.launch.py action:=1
 control_with_pyroki是测试单独的轨迹规划，例如只测试turn，或者只测试向上平移1cm这样。
 
-May11 Log
+* **May11 Log**
 修改了serialNode里的话题发布，serial没有打开时也会发送默认数据到话题
+添加了key_board_input节点用于接收键盘输入，模拟真实键盘输入，发布话题到/key_input
+
+* **flow_with_pyroki运行方式.** 
+模拟比赛中的上位机控制的全流程
+python3 ./src/plan/scripts/pyroki_ik_node.py（发布话题/pyroki_joint_states和/pyroki_controller）
+ros2 launch plan pyroki_ik.launch.py(启动Movegroup和rviz节点)
+ros2 launch plan flow_with_pyroki.launch.py（订阅/pyroki_joint_states, /key_input, 发布/joint_states）
+ros2 run plan keyboard_input（发布/key_input）
+/pyroki_controller是存粹为了可视化，话题类型是robotstate
+/pyroki_joint_states是为了做计算，但是现在不知道为什么rviz里一个类型为robotstate的sub在订阅他
+scene robot模拟的是真实机械臂，订阅/joint_state话题，所以计算出的目标theta会被发布到/joint_state话题上
+
+
+
+rviz里的机械臂在不受controller控制时，用的是自己的关节角度
+source ./install/setup.bash

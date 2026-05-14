@@ -444,9 +444,9 @@ private:
         
         // 画轨迹线
         if (actual_trajectory_.size() > 2) {
-            publish_trajectory_line(actual_trajectory_, "actual_trail", 10,
+            write_trajectory_line(actual_trajectory_, "actual_trail", 10,
                                     1.0, 1.0, 0.0, 0.8);  // 黄色
-            publish_trajectory_line(target_trajectory_, "target_trail", 11,
+            write_trajectory_line(target_trajectory_, "target_trail", 11,
                                     1.0, 0.0, 1.0, 0.5);  // 品红色
         }
         
@@ -514,7 +514,7 @@ private:
         marker_pub_->publish(disk);
     }
     
-    void publish_trajectory_line(
+    void write_trajectory_line(
         const std::vector<Eigen::Vector3d>& points,
         const std::string& ns, int id,
         float r, float g, float b, float a)

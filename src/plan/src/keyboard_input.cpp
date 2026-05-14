@@ -29,9 +29,9 @@ int main(int argc, char** argv)
         ssize_t n = read(STDIN_FILENO, &c, 1);
         if (n <= 0) continue;
         std_msgs::msg::String msg;
-        msg.data = std::string(1, c);
+        msg.data = std::string(1, toupper(c));
         pub->publish(msg);
-        RCLCPP_INFO(node->get_logger(), "key: '%c' (0x%02x)", c, (unsigned)c);
+        RCLCPP_INFO(node->get_logger(), "key: '%c' (0x%02x)", toupper(c), (unsigned)toupper(c));
         if (c == 'q' || c == 'Q') break;
     }
     tcsetattr(STDIN_FILENO, TCSANOW, &old_t);

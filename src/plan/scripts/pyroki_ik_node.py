@@ -3,7 +3,8 @@
 pyroki_ik_node.py
 - 启动 viser 网页（默认 http://localhost:8080），可拖拽末端 gizmo
 - 用 pyroki 求 IK
-- 发布到 /joint_states 供 robot_state_publisher / MoveIt 使用
+- 发布到 /controller_display_robot_state 供 flow_with_pyroki 当作“控制器参考状态”
+  (flow_with_pyroki 再决定要不要把它转发到 /joint_states)
 """
 
 import os
@@ -14,9 +15,11 @@ import numpy as np
 # pyroki_snippets 在 pyroki 仓库的 examples/ 下, 不是 pip 包
 sys.path.insert(0, "/home/hku/third_party/pyroki/examples")
 
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
+from moveit_msgs.msg import DisplayRobotState, RobotState
 
 import pyroki as pk
 import pyroki_snippets as pks
@@ -63,7 +66,8 @@ def _make_package_filename_handler():
 class PyrokiIKNode(Node):
     def __init__(self):
         super().__init__("pyroki_ik_node")
-        self.pub = self.create_publisher(JointState, "/joint_states", 10)
+        self.pub_js = self.create_publisher(JointState, "/pyroki_joint_states", 10)
+        self.pub_drs = self.create_publisher(DisplayRobotState, "/pyroki_controller", 10)
         self.get_logger().info(f"Loading URDF: {URDF_PATH}")
 
         self.urdf = yourdfpy.URDF.load(
@@ -79,8 +83,8 @@ class PyrokiIKNode(Node):
         self.pk_joint_names = list(self.robot.joints.actuated_names)
         self.get_logger().info(f"pyroki actuated joints: {self.pk_joint_names}")
 
-        # 初始 cfg：用 robot 自带的 default
-        self.cfg = np.array(self.robot.joint_var_cls(0).default_factory())
+        # 初始 cfg：全 0
+        self.cfg = np.zeros(len(self.robot.joints.actuated_names))
 
         # 用 FK 算出 gripper 当前位姿, 后面用来初始化 gizmo
         ee_pos, ee_wxyz = self._fk_ee(self.cfg)
@@ -108,8 +112,9 @@ class PyrokiIKNode(Node):
         def _(_):
             self._solve_and_publish()
 
-        # 启动后立刻算一次
-        self._solve_and_publish()
+        # 启动后只发布初始值，不立刻求解
+        # self._solve_and_publish()  # 注释掉，保持全 0 初始
+        self._publish_current()
 
         # 兜底定时重发, 防止 RViz/MoveIt 丢消息
         self.create_timer(0.1, self._publish_current)
@@ -143,11 +148,18 @@ class PyrokiIKNode(Node):
             else:
                 positions.append(0.0)
 
+        # 发布 JointState 到 /pyroki_joint_states
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = JOINT_NAMES
         msg.position = positions
-        self.pub.publish(msg)
+        self.pub_js.publish(msg)
+
+        # 发布 DisplayRobotState 到 /pyroki_controller
+        drs = DisplayRobotState()
+        drs.state = RobotState()
+        drs.state.joint_state = msg
+        self.pub_drs.publish(drs)
 
     def _fk_ee(self, cfg):
         """正运动学: 返回 EE_LINK 在 base frame 下的 (xyz, wxyz)."""

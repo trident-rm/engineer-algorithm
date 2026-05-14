@@ -237,7 +237,7 @@ Visualization Manager:
       Name: RobotState
       Robot Alpha: 1
       Robot Description: robot_description
-      Robot State Topic: display_robot_state
+      Robot State Topic: /display_joint_state
       Show All Links: true
       Show Highlights: true
       Value: true
