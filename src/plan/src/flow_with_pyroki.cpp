@@ -1,12 +1,8 @@
 /**
  * @file flow_with_pyroki.cpp
  * @brief 多模态控制工作流: 支持状态机切换
- *        F (Fixed)   : 不动, 使用初始值
- *        O (Following): 跟随 /pyroki_joint_states
- *        W (Planning) : 规划末端运动, 执行轨迹, 后回到 Fixed
- *
- * 配套用 ros2 run plan keyboard_input 把键盘输入转成 /key_input 话题.
  */
+
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -53,7 +49,7 @@ static std::mutex g_js_mutex;
 //关节角度的全局变量
 static std::vector<double> g_arm_state(6, 0.0);           // 当前发布状态
 //static std::vector<double> g_last_state(6, 0.0);       // g_arm_state上一刻的状态
-static std::vector<double> g_real_arm_state(6, 0.0);      // 实际状态 (在仿真里和/joint_states一样, 但在真实环境里是读取串口的数据)
+//static std::vector<double> g_real_arm_state(6, 0.0);      // 实际状态 (在仿真里和/joint_states一样, 但在真实环境里是读取串口的数据)
 static std::vector<double> g_ctrl_js(6, 0.0);
 
 //方向向量的全局变量
@@ -462,39 +458,32 @@ private:
         
         Eigen::Vector3d recorded_pos(up_start[0], up_start[1], up_start[2]);
 
-        // ── Step 3: 计算约束方向，消除控制器在该方向的偏移 ────────────────────────
         Eigen::Vector3d constrain_dir_normalized = 
             Eigen::Vector3d(q_vector[0], q_vector[1], q_vector[2]).normalized();
         
         Eigen::Vector3d controller_displacement = controller_ee - recorded_pos;
         double constrain_component = controller_displacement.dot(constrain_dir_normalized);
         
-        // 目标位置：记录位置 + 去掉约束方向分量的控制器位移
         Eigen::Vector3d constrained_target = recorded_pos + 
             (controller_displacement - constrain_component * constrain_dir_normalized);
 
-        // ── Step 4: 速度控制 ──────────────────────────────────────────────────────
         Eigen::Vector3d velocity = constrained_target - current_ee;
         
-        // 漂移修正：若 current_ee 因数值误差偏离约束平面，沿约束方向施加回平面力
         double drift_along_constraint = (current_ee - recorded_pos).dot(constrain_dir_normalized);
         const double DRIFT_CORRECTION_GAIN = 2.0;
         velocity -= DRIFT_CORRECTION_GAIN * drift_along_constraint * constrain_dir_normalized;
 
-        // ── Step 5: 死区 ──────────────────────────────────────────────────────────
         double position_error = velocity.norm();
         const double DEAD_ZONE = 0.0005;  // m
         if (position_error < DEAD_ZONE) {
             return arm_state_copy;
         }
 
-        // ── Step 6: 限速 ──────────────────────────────────────────────────────────
         const double MAX_SPEED = 0.45;  // m/s
         if (position_error > MAX_SPEED) {
             velocity *= (MAX_SPEED / position_error);
         }
 
-        // ── Step 7: 雅可比矩阵（仅位置部分，3 × n）────────────────────────────────
         Eigen::MatrixXd full_jacobian;
         Eigen::Vector3d ref_pt(0.0, 0.0, 0.0);
         if (!arm_state->getJacobian(
@@ -505,11 +494,9 @@ private:
             return {};
         }
 
-        // 只使用位置部分（前3行）
         Eigen::MatrixXd J = full_jacobian.block(0, 0, 3, full_jacobian.cols());
         Eigen::VectorXd vel_cmd = velocity;
 
-        // ── Step 8: SVD → 自适应阻尼 ───────────────────────────────────────────────
         Eigen::JacobiSVD<Eigen::MatrixXd> svd(J);
         const Eigen::VectorXd& sv = svd.singularValues();
         double condition_number = (sv(sv.size() - 1) > 1e-10)
@@ -530,21 +517,18 @@ private:
             damping = DAMPING_MIN + t * (DAMPING_MAX - DAMPING_MIN);
         }
 
-        // ── Step 9: 雅可比伪逆 J_pinv = Jᵀ(JJᵀ + λ²I)⁻¹ ──────────────────────────
         int jrows = static_cast<int>(J.rows());
         Eigen::MatrixXd JJt = J * J.transpose()
                             + (damping * damping) * Eigen::MatrixXd::Identity(jrows, jrows);
         Eigen::MatrixXd J_pinv = J.transpose() * JJt.inverse();
         Eigen::VectorXd delta_q = J_pinv * vel_cmd * dt;
 
-        // ── Step 10: 关节角变化量限幅 ──────────────────────────────────────────────
         const double MAX_JOINT_DELTA = 0.1;  // rad
         double max_dq = delta_q.cwiseAbs().maxCoeff();
         if (max_dq > MAX_JOINT_DELTA) {
             delta_q *= (MAX_JOINT_DELTA / max_dq);
         }
 
-        // ── Step 11: 关节限位裕度限幅 ──────────────────────────────────────────────
         const double JOINT_LIMIT_MARGIN = 0.05;  // rad
         const auto& joint_models = jmg_->getActiveJointModels();
         double limit_scale = 1.0;
@@ -574,7 +558,6 @@ private:
             delta_q *= std::max(limit_scale, 0.0);
         }
 
-        // ── 构造目标关节角度 ───────────────────────────────────────────────────────
         std::vector<double> result(arm_state_copy.size());
         for (size_t i = 0; i < arm_state_copy.size(); ++i) {
             result[i] = arm_state_copy[i] + delta_q(static_cast<Eigen::Index>(i));

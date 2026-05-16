@@ -1,105 +1,189 @@
-* **Build workspace**
+### 编译和环境配置
+```bash
+colcon build
+# 或只编译特定包:
+colcon build --packages-select <package_name>
 
-  $ colcon build / colcon build --packages-select <package name>
-* **Source environment**
-
-  $ source ./install/setup.bash
-* **Launch demo in RVIZ**
-
-  $ ros2 launch plan plan_movegroup_robo_arm.launch.py
-  Wait for RVIZ interface to fully load，and follow terminal prompts to plan and execute motions
-* **Data communication test**
-
-  $ ros2 run plan read_data
-
-* **启动文件们**
-
-  $ ros2 launch plan real_world.launch.py 
-  （最开始写的规划末端往上平移10cm的代码，可以在机械臂上执行  
-  $ ros2 launch plan real_world_new.launch.py （平面约束版本)  
-  $ ros2 launch plan key_step_control.launch.py (通过按键控制规划往指定方向移动1cm,可以与机械臂通讯版本)  
-  $ ros2 launch plan turn_movegroup.launch.py (通过按键控制规划三级对矿的绕Q轴转90度,可以与机械臂通讯版本)
-
-* **Robot files**
-
-  The URDF model corresponding to the real-world robot is stored in `robo_arm6/`, along with corresponding SRDF files and configuration files for use with the MoveIt motion planning pipeline.
-
-  最新版机械臂文件是robo_arm10, UC还需要更新机械臂文件
-
-
-* **目录结构**
-  
-  src/  
-  ├── arms/                          # 机械臂模型 + MoveIt 配置  
-  ├── plan/                          # 规划与控制节点  
-  ├── tools/                         # 工具库，现在只含有通讯需要的文件  
-  └── app/                           # 预留的应用层包  
-  
-  debug_serial.py #用于调试串口通信的脚本，打印串口里的十六进制数据
-
-* **排查连接** 
-
-  ls /dev/ttyUSB* 或者 ls /dev/ttyACM*
-  sudo chmod 666 /dev/ttyUSB0
-  或将用户加入dialout组（永久改变）
-  ls -l /dev/ttyUSB0 查看所属的group
-  sudo usermod -aG dialout $USER   # 把当前用户加入 dialout 组, 之后必须 注销重登 或 重启，组权限才会生效
-  groups                            # 验证：输出里应该出现 dialout
-  ros2 run plan read_data
-
-* **可视化们** 
-  
-  1. 透明机械臂是moveit启动后自带的scene robot，橙色的是target。 Scene Robot的消息来自/joint_state, moveit自动订阅这个话题。话题由SerialNode里的成员变量joint_pub_这个publisher创建。
-  2.  key_step_control里，绿色的是通过串口收到的机械臂数据画的。topic是/display_robot_state。MoveItVisualTools内部会创建一个moveit_msgs/DisplayRobotState类型的publisher，topic就是这个.
-
-
-* **TODOs**
-  
-  1. 自动识别串口设备节点
-  2. 用pyroki进行teleop，测试规划
-  3. 测平面约束算法
-  4. 检查/joint_state和/display_robot_state数据流
-  ros2 topic hz /joint_states
-  ros2 topic info /joint_states --verbose
-  ros2 topic echo /joint_states --once
-  5. 确定按键对应的功能
-  6. 测所有基本功能
-  7. 合并基本功能并部署
-
-* **Notes**
-  
-  1. Apr20左右把所有的数据的接收改成了timer的回调, 减少了一个线程，把数据接受和movegroup放在同一个线程里（有可能rviz not available的问题是因为只启动了一个executor）
-  2. 如果工作去不在/home/hku/robo_arm，需要改plan/CMakeList.txt里的绝对路径
-  3. 规划组叫arm，end effector叫gripper
-  4. robot arm 10里添加了第七个link，一个虚拟连杆，在抓夹的中心，把这个作为规划的目标(ef)。后续直接在solidwork里创建这个虚拟的link
-
-* **生成SRDF文件之方法**
-  
-  $ ros2 launch moveit_setup_assistant setup_assistant.launch.py
-  
-
-
-* **control_with_pyroki的启动方式**
-python3 ./src/plan/scripts/pyroki_ik_node.py
-ros2 launch plan pyroki_ik.launch.py
-ros2 launch plan control_with_pyroki.launch.py action:=1
-control_with_pyroki是测试单独的轨迹规划，例如只测试turn，或者只测试向上平移1cm这样。
-
-* **May11 Log**
-修改了serialNode里的话题发布，serial没有打开时也会发送默认数据到话题
-添加了key_board_input节点用于接收键盘输入，模拟真实键盘输入，发布话题到/key_input
-
-* **flow_with_pyroki运行方式.** 
-模拟比赛中的上位机控制的全流程
-python3 ./src/plan/scripts/pyroki_ik_node.py（发布话题/pyroki_joint_states和/pyroki_controller）
-ros2 launch plan pyroki_ik.launch.py(启动Movegroup和rviz节点)
-ros2 launch plan flow_with_pyroki.launch.py（订阅/pyroki_joint_states, /key_input, 发布/joint_states）
-ros2 run plan keyboard_input（发布/key_input）
-/pyroki_controller是存粹为了可视化，话题类型是robotstate
-/pyroki_joint_states是为了做计算，但是现在不知道为什么rviz里一个类型为robotstate的sub在订阅他
-scene robot模拟的是真实机械臂，订阅/joint_state话题，所以计算出的目标theta会被发布到/joint_state话题上
-
-
-
-rviz里的机械臂在不受controller控制时，用的是自己的关节角度
+# 配置环境
 source ./install/setup.bash
+```
+
+## 运行场景
+
+### 1. 仿真场景 - MoveIt演示
+```bash
+ros2 launch plan plan_movegroup_robo_arm.launch.py
+# 等待RVIZ加载完毕，按照终端提示规划和执行动作
+```
+
+### 2. 键盘控制场景（仿真 + 机械臂通讯）
+
+#### 基础步长控制 (1cm步长)
+```bash
+ros2 launch plan key_step_control.launch.py
+```
+- **W/S**: 上/下 (Z轴)
+- **A/D**: 左/右 (Y轴)  
+- **Q/E**: 后/前 (X轴)
+- **I/K**: 末端Z轴正/负方向
+
+#### 旋转控制 (绕Q轴转90°)
+```bash
+ros2 launch plan turn_movegroup.launch.py
+```
+
+### 3. 实物机械臂控制
+
+#### 简单版本 - 末端Z向上平移10cm
+```bash
+ros2 launch plan real_world.launch.py
+```
+
+#### 平面约束版本 - 末端在平面内运动
+```bash
+ros2 launch plan real_world_new.launch.py
+```
+
+### 4. flow_with_pyroki（模拟比赛上位机控制）
+
+运行顺序（三个终端）：
+```bash
+# 终端1: 启动pyroki IK节点
+python3 ./src/plan/scripts/pyroki_ik_node.py
+
+# 终端2: 启动RViz和MoveIt
+ros2 launch plan pyroki_ik.launch.py
+
+# 终端3: 启动flow节点
+ros2 launch plan flow_with_pyroki.launch.py
+
+# 终端4: 启动键盘输入
+ros2 run plan keyboard_input
+```
+
+**控制按键：**
+- **G**: Following 模式（跟随pyroki控制器）
+- **W/S/A/D/E/Q**: 基座坐标系方向增量运动
+- **I/K**: 末端Z轴正/负方向增量运动
+- **R**: UpRestrain（约束末端在某方向不动）
+- **T**: Turn（绕P轴旋转）
+- **1-6**: 去取能量单元
+- **X**: 退出
+
+**话题说明：**
+- `/pyroki_joint_states`: pyroki的关节角（用于计算）
+- `/pyroki_controller`: pyroki的RobotState（用于可视化）
+- `/joint_states`: 实际控制的机械臂状态（scene robot订阅此话题）
+- `/display_robot_state`: 真实机械臂数据的可视化
+
+### 5. 通讯测试
+```bash
+ros2 run plan read_data
+```
+打印串口接收的十六进制数据
+
+## 项目结构
+
+### 代码目录
+```
+src/  
+├── arms/                          # 机械臂模型 + MoveIt配置  
+│   ├── robo_arm6/                # 旧版机械臂（6关节）
+│   ├── robo_arm10/               # 最新版机械臂（含虚拟link）
+│   ├── robo_arm*_moveit_config/  # MoveIt配置包
+│   └── ...
+├── plan/                         # 规划与控制节点
+├── tools/                        # 通讯工具库
+└── app/                          # 应用层包（预留）
+```
+
+### 机械臂配置
+- **最新版本**: `robo_arm10` 
+  - 包含7个link（第7个是虚拟连杆，位于抓夹中心）
+  - 规划组名: `arm`
+  - End Effector名: `gripper`
+- **旧版本**: `robo_arm6` 
+  - 实物机械臂对应的URDF和SRDF
+
+### 调试脚本
+- `debug_serial.py` - 串口通讯调试，打印十六进制数据
+
+## 串口连接排查
+
+```bash
+# 列出串口设备
+ls /dev/ttyUSB* 或 ls /dev/ttyACM*
+
+# 临时修改权限
+sudo chmod 666 /dev/ttyUSB0
+
+# 永久加入dialout组
+sudo usermod -aG dialout $USER
+# 修改后需要注销重新登录或重启
+
+# 验证
+groups  # 输出应该包含dialout
+
+# 测试通讯
+ros2 run plan read_data
+```
+
+## 可视化说明
+
+### Scene Robot（透明色）
+- 订阅 `/joint_states` 话题
+- MoveIt自动同步最新关节状态
+- 代表实际或规划的机械臂状态
+
+### Target（橙色）
+- MoveIt的目标位置显示
+- Trajectory播放规划路径
+
+### Display Robot（绿色）
+- 通过串口接收的真实机械臂数据
+- 话题：`/display_robot_state`
+- 由MoveItVisualTools发布
+
+## SRDF文件生成
+
+使用MoveIt Setup Assistant：
+```bash
+ros2 launch moveit_setup_assistant setup_assistant.launch.py
+```
+
+## 常用ros2命令
+
+```bash
+# 检查/joint_states话题发布频率
+ros2 topic hz /joint_states
+
+# 查看话题详细信息
+ros2 topic info /joint_states --verbose
+
+# 打印话题单条消息
+ros2 topic echo /joint_states --once
+```
+
+## 开发笔记
+
+### 重要更改历史
+
+**Apr 20**: 所有数据接收改为timer回调，减少了一个线程，将数据接收和move_group放在同一个executor里
+
+**May 11**: 
+- SerialNode话题发布改进：即使串口未打开也会发送默认数据
+- 添加keyboard_input节点用于接收和模拟键盘输入
+
+**May 16**:
+- 删除robo_arm10的base_link inertia（KDL不支持root link带inertia）
+- 重构flow_with_pyroki.launch.py
+
+### 路径配置
+如果工作目录不在 `/home/hku/robo_arm`，需要更新 `plan/CMakeLists.txt` 中的绝对路径
+
+## TODOs
+
+- [ ] 自动识别串口设备节点
+- [ ] 测平面约束算法
+- [ ] 合并基本功能并部署到实物
+- [ ] 更新所有机械臂文件到robo_arm10版本
