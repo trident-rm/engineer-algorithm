@@ -52,7 +52,7 @@ ros2 launch plan real_world_new.launch.py
 python3 ./src/plan/scripts/pyroki_ik_node.py
 
 # 终端2: 启动RViz和MoveIt
-ros2 launch plan pyroki_ik.launch.py
+ros2 launch plan pyroki_ik.launch.py(move these into flow_with_pyroki.launch.py)
 
 # 终端3: 启动flow节点
 ros2 launch plan flow_with_pyroki.launch.py
@@ -187,3 +187,15 @@ ros2 topic echo /joint_states --once
 - [ ] 测平面约束算法
 - [ ] 合并基本功能并部署到实物
 - [ ] 更新所有机械臂文件到robo_arm10版本
+
+##complete version
+串口的真实机械臂角度被publish到/joint_states
+串口的真实控制器角度被publish到/
+
+高度需要减去底盘的高度
+x方向需要加上臂base到轮子最前面的距离
+y方向不用调
+
+low_with_pyroki-3] [INFO] [1779451698.911733369] [flow_with_pyroki.moveit.ros.move_group_interface]: Planning request aborted
+[flow_with_pyroki-3] [ERROR] [1779451698.912200396] [flow_with_pyroki.moveit.ros.move_group_interface]: MoveGroupInterface::plan() failed or timeout reached
+[flow_with_pyroki-3] [WARN] [1779451698.912329098] [flow_with_pyroki]: Plan to energy_unit_1 failed (code=99999, error='FAILURE', message='', source='')

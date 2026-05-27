@@ -110,13 +110,24 @@ void SerialRxNode::send_roboarm_with_controller(const std::vector<float>& curren
     roboarm_with_controller_tx_t data;
     data.SOF = EXPECTED_SOF;
     
+    // 先进行坐标转换：URDF坐标系 → 硬件坐标系（与接收端转换相反）
+    std::vector<float> hardware_angles(robo_arm_angles.size());
+    if (robo_arm_angles.size() >= 6) {
+        hardware_angles[0] = robo_arm_angles[0];
+        hardware_angles[1] = -robo_arm_angles[1];
+        hardware_angles[2] = -robo_arm_angles[2];
+        hardware_angles[3] = -robo_arm_angles[3];
+        hardware_angles[4] = robo_arm_angles[4] - static_cast<float>(M_PI);
+        hardware_angles[5] = -robo_arm_angles[5];
+    }
+    
     // 将 float 角度转换为 int16_t：角度（弧度）* 10000
     // 对于 joint4 和 joint5 (索引3和4)，需要乘以10000后-31000
     for (int i = 0; i < 6; ++i) {
         if (i == 3 || i == 4) {
-            data.robo_arm_joint_theta[i] = static_cast<int16_t>(robo_arm_angles[i] * 10000.0f - 31000.0f);
+            data.robo_arm_joint_theta[i] = static_cast<int16_t>(hardware_angles[i] * 10000.0f - 31000.0f);
         } else {
-            data.robo_arm_joint_theta[i] = static_cast<int16_t>(robo_arm_angles[i] * 10000.0f);
+            data.robo_arm_joint_theta[i] = static_cast<int16_t>(hardware_angles[i] * 10000.0f);
         }
         data.current[i] = currents[i];
     }
@@ -302,12 +313,20 @@ void SerialRxNode::publish_joint_states(const std::vector<uint8_t>& packet){
         robo_msg.position = filtered_angles;
         robo_arm_pub_->publish(robo_msg);
         
-        // 发布 controller_joint_states
+        // 发布 controller_joint_states（应用相同的坐标转换）
+        std::vector<double> ctrl_converted_angles(controller_angle_.size());
+        if (controller_angle_.size() >= 6) {
+            ctrl_converted_angles[0] = controller_angle_[0];
+            ctrl_converted_angles[1] = -controller_angle_[1];
+            ctrl_converted_angles[2] = -controller_angle_[2];
+            ctrl_converted_angles[3] = -controller_angle_[3];
+            ctrl_converted_angles[4] = controller_angle_[4] + M_PI;
+            ctrl_converted_angles[5] = -controller_angle_[5];
+        }
         auto ctrl_msg = sensor_msgs::msg::JointState();
         ctrl_msg.header.stamp = timestamp;
         ctrl_msg.name = {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"};
-        std::vector<double> ctrl_angle_double(controller_angle_.begin(), controller_angle_.end());
-        ctrl_msg.position = ctrl_angle_double;
+        ctrl_msg.position = ctrl_converted_angles;
         controller_pub_->publish(ctrl_msg);
         
         RCLCPP_DEBUG(this->get_logger(), "Published joint_states, robo_arm and controller states, mode=%d", control_mode_);

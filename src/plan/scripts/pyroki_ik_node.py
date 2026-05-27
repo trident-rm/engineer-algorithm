@@ -85,6 +85,9 @@ class PyrokiIKNode(Node):
 
         # 初始 cfg：全 0
         self.cfg = np.zeros(len(self.robot.joints.actuated_names))
+        
+        # 用于控制打印频率（每5秒打印一次）
+        self.last_print_time = time.time()
 
         # 用 FK 算出 gripper 当前位姿, 后面用来初始化 gizmo
         ee_pos, ee_wxyz = self._fk_ee(self.cfg)
@@ -160,6 +163,16 @@ class PyrokiIKNode(Node):
         drs.state = RobotState()
         drs.state.joint_state = msg
         self.pub_drs.publish(drs)
+        
+        # 每5秒打印一次末端位置
+        current_time = time.time()
+        if current_time - self.last_print_time >= 5.0:
+            ee_pos, ee_wxyz = self._fk_ee(self.cfg)
+            self.get_logger().info(
+                f"[pyroki] EE Pose: pos=({ee_pos[0]:.4f}, {ee_pos[1]:.4f}, {ee_pos[2]:.4f}) "
+                f"orient=({ee_wxyz[0]:.4f}, {ee_wxyz[1]:.4f}, {ee_wxyz[2]:.4f}, {ee_wxyz[3]:.4f})"
+            )
+            self.last_print_time = current_time
 
     def _fk_ee(self, cfg):
         """正运动学: 返回 EE_LINK 在 base frame 下的 (xyz, wxyz)."""

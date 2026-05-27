@@ -4,11 +4,9 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /MotionPlanning1
-        - /RobotState2
-        - /RobotState3
+        - /TF1
       Splitter Ratio: 0.5
-    Tree Height: 144
+    Tree Height: 273
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
@@ -73,6 +71,10 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
+          gripper:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
           link1:
             Alpha: 1
             Show Axes: false
@@ -154,6 +156,10 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
+          gripper:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
           link1:
             Alpha: 1
             Show Axes: false
@@ -192,7 +198,7 @@ Visualization Manager:
     - Attached Body Color: 150; 50; 150
       Class: moveit_rviz_plugin/RobotState
       Collision Enabled: false
-      Enabled: true
+      Enabled: false
       Links:
         All Links Enabled: true
         Expand Joint Details: false
@@ -204,6 +210,10 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
+        gripper:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
         link1:
           Alpha: 1
           Show Axes: false
@@ -240,12 +250,12 @@ Visualization Manager:
       Robot State Topic: /display_joint_state
       Show All Links: true
       Show Highlights: true
-      Value: true
+      Value: false
       Visual Enabled: true
     - Attached Body Color: 150; 50; 150
       Class: moveit_rviz_plugin/RobotState
       Collision Enabled: false
-      Enabled: true
+      Enabled: false
       Links:
         All Links Enabled: true
         Expand Joint Details: false
@@ -257,6 +267,10 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
+        gripper:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
         link1:
           Alpha: 1
           Show Axes: false
@@ -293,12 +307,12 @@ Visualization Manager:
       Robot State Topic: controller_display_robot_state
       Show All Links: true
       Show Highlights: true
-      Value: true
+      Value: false
       Visual Enabled: true
     - Attached Body Color: 150; 50; 150
       Class: moveit_rviz_plugin/RobotState
       Collision Enabled: false
-      Enabled: true
+      Enabled: false
       Links:
         All Links Enabled: true
         Expand Joint Details: false
@@ -310,6 +324,10 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
+        gripper:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
         link1:
           Alpha: 1
           Show Axes: false
@@ -346,8 +364,48 @@ Visualization Manager:
       Robot State Topic: restrict_arm_display_robot_state
       Show All Links: true
       Show Highlights: true
-      Value: true
+      Value: false
       Visual Enabled: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Filter (blacklist): ""
+      Filter (whitelist): ""
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+        base_link:
+          Value: true
+        gripper:
+          Value: true
+        link1:
+          Value: true
+        link2:
+          Value: true
+        link3:
+          Value: true
+        link4:
+          Value: true
+        link5:
+          Value: true
+        link6:
+          Value: true
+      Marker Scale: 1
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Tree:
+        base_link:
+          link1:
+            link2:
+              link3:
+                link4:
+                  link5:
+                    link6:
+                      gripper:
+                        {}
+      Update Interval: 0
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -366,25 +424,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 3.947645425796509
+      Distance: 2.653749465942383
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.10000000149011612
-        Y: 0.25
-        Z: 0.30000001192092896
+        X: -0.005089158192276955
+        Y: 0.17853496968746185
+        Z: 0.3774378001689911
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.6000000238418579
+      Pitch: 0.18000008165836334
       Target Frame: base_link
       Value: Orbit (rviz_default_plugins)
-      Yaw: 0.2169998586177826
+      Yaw: 2.3669979572296143
     Saved: ~
 Window Geometry:
   Displays:
@@ -398,9 +456,9 @@ Window Geometry:
     collapsed: false
   MotionPlanning - Trajectory Slider:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000371fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000004400fffffffb000000100044006900730070006c006100790073010000003f00000116000000cc00fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e0067010000015b000001a10000019600fffffffb0000000800480065006c0070000000029a0000006e0000006f00fffffffb0000000a005600690065007700730100000302000000ae000000a900ffffff000001f60000037100000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000100000000000002b40000036bfc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000004a00fffffffb000000100044006900730070006c00610079007301000000420000019d000000d200fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e006701000001e5000001c8000001bd00fffffffb0000000800480065006c0070000000029a0000006e0000007200fffffffb0000000a0056006900650077007300000002fb000000b2000000b200ffffff000001f60000036b00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
   Width: 1200
-  X: 66
-  Y: 32
+  X: 720
+  Y: 47

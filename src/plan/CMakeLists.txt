@@ -172,6 +172,25 @@ ament_target_dependencies(test_constraint
   moveit_core
 )
 
+# Complete control node with real hardware (requires serial)
+if(serial_FOUND)
+  add_executable(complete_control src/complete_control.cpp)
+  target_link_libraries(complete_control utils tools pinocchio::pinocchio)
+  ament_target_dependencies(complete_control
+    rclcpp
+    sensor_msgs
+    std_msgs
+    geometry_msgs
+    moveit_ros_planning_interface
+    moveit_visual_tools
+    moveit_msgs
+    trajectory_msgs
+    moveit_core
+    serial
+    tf2_eigen
+  )
+endif()
+
 
 
 
@@ -207,7 +226,7 @@ if(serial_FOUND)
   endif()
 
   list(APPEND _install_targets
-    real_world real_world_new read_data)
+    real_world real_world_new read_data complete_control)
   if(TARGET gravity_comp_debug)
     list(APPEND _install_targets gravity_comp_debug)
   endif()

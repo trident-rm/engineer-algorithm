@@ -13,10 +13,12 @@
 #include <functional>
 
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp/clock.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <moveit_visual_tools/moveit_visual_tools.h>
+#include <moveit/kinematic_constraints/utils.hpp>
 
 //全局常量
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("flow_with_pyroki");
@@ -27,22 +29,150 @@ static const std::vector<std::string> JOINT_NAMES = {
 static const std::vector<double> energy_unit_1 = {
     0.0, -1.57, 1.57, 0.0, 0.0, 0.0
 };
+static const geometry_msgs::msg::Pose energy_unit_1_pose = []() {
+    Eigen::Matrix3d rot;
+    rot << 0, 0, 1,
+           0, 1, 0,
+          -1, 0, 0;
+    Eigen::Quaterniond q(rot);
+    q.normalize();
+    
+    geometry_msgs::msg::Pose p;
+    p.position.x = 0.3;
+    p.position.y = 0.0;
+    p.position.z = 0.525;
+    p.orientation.x = q.x();
+    p.orientation.y = q.y();
+    p.orientation.z = q.z();
+    p.orientation.w = q.w();
+    return p;
+}();
 static const std::vector<double> energy_unit_2 = {
     0.0, -1.57, 1.57, 0.0, 0.0, 0.0
 };
+static const geometry_msgs::msg::Pose energy_unit_2_pose = []() {
+    Eigen::Matrix3d rot;
+    rot << 0, sin(M_PI/6), cos(M_PI/6),
+           0, cos(M_PI/6), -sin(M_PI/6),
+          -1, 0, 0;
+    Eigen::Quaterniond q(rot);
+    q.normalize();
+    
+    geometry_msgs::msg::Pose p;
+    p.position.x = 0.3;
+    p.position.y = 0.0;
+    p.position.z = 0.39375;
+    p.orientation.x = q.x();
+    p.orientation.y = q.y();
+    p.orientation.z = q.z();
+    p.orientation.w = q.w();
+    return p;
+}();
 static const std::vector<double> energy_unit_3 = {
     0.0, -1.57, 1.57, 0.0, 0.0, 0.0
 };
+static const geometry_msgs::msg::Pose energy_unit_3_pose = []() {
+    Eigen::Matrix3d rot;
+    rot << 0, -sin(M_PI/6), cos(M_PI/6),
+           0, cos(M_PI/6),  sin(M_PI/6),
+          -1, 0, 0;
+
+    Eigen::Quaterniond q(rot);
+    q.normalize();
+    
+    geometry_msgs::msg::Pose p;
+    p.position.x = 0.3;
+    p.position.y = 0.0;
+    p.position.z = 0.20625;
+    p.orientation.x = q.x();
+    p.orientation.y = q.y();
+    p.orientation.z = q.z();
+    p.orientation.w = q.w();
+    return p;
+}();
+
 static const std::vector<double> energy_unit_4 = {
     0.0, -1.57, 1.57, 0.0, 0.0, 0.0
 };
+static const geometry_msgs::msg::Pose energy_unit_4_pose = []() {
+    Eigen::Matrix3d rot;
+    rot << 0, 0, 1,
+           0, 1, 0,
+          -1, 0, 0;
+    Eigen::Quaterniond q(rot);
+    q.normalize();
+    
+    geometry_msgs::msg::Pose p;
+    p.position.x = 0.3;
+    p.position.y = 0.0;
+    p.position.z = 0.1125;
+    p.orientation.x = q.x();
+    p.orientation.y = q.y();
+    p.orientation.z = q.z();
+    p.orientation.w = q.w();
+    return p;
+}();
 static const std::vector<double> energy_unit_5 = {
     0.0, -1.57, 1.57, 0.0, 0.0, 0.0
 };
+static const geometry_msgs::msg::Pose energy_unit_5_pose = []() {
+    Eigen::Matrix3d rot;
+    rot << 0, sin(M_PI/6), cos(M_PI/6),
+           0, cos(M_PI/6), -sin(M_PI/6),
+          -1, 0, 0;
+    Eigen::Quaterniond q(rot);
+    q.normalize();
+    
+    geometry_msgs::msg::Pose p;
+    p.position.x = 0.3;
+    p.position.y = 0.0;
+    p.position.z = 0.20625;
+    p.orientation.x = q.x();
+    p.orientation.y = q.y();
+    p.orientation.z = q.z();
+    p.orientation.w = q.w();
+    return p;
+}();
 static const std::vector<double> energy_unit_6 = {
     0.0, -1.57, 1.57, 0.0, 0.0, 0.0
 };
+static const geometry_msgs::msg::Pose energy_unit_6_pose = []() {
+    Eigen::Matrix3d rot;
+    rot << 0, -sin(M_PI/6), cos(M_PI/6),
+           0, cos(M_PI/6),  sin(M_PI/6),
+          -1, 0, 0;
+    Eigen::Quaterniond q(rot);
+    q.normalize();
+    
+    geometry_msgs::msg::Pose p;
+    p.position.x = 0.3;
+    p.position.y = 0.0;
+    p.position.z = 0.39375;
+    p.orientation.x = q.x();
+    p.orientation.y = q.y();
+    p.orientation.z = q.z();
+    p.orientation.w = q.w();
+    return p;
+}();
 
+static const geometry_msgs::msg::Pose save_pose = [](){
+    Eigen::Matrix3d rot;
+    rot << 0, 0, 1,
+           0, 1, 0,
+          -1, 0, 0;
+    Eigen::Quaterniond q(rot);
+    q.normalize();
+    
+    geometry_msgs::msg::Pose p;
+    p.position.x = 0.31033;
+    p.position.y = -0.23614;
+    p.position.z = 0.13404;
+    p.orientation.x = q.x();
+    p.orientation.y = q.y();
+    p.orientation.z = q.z();
+    p.orientation.w = q.w();
+    return p;
+}();
 //全局变量
 static std::mutex g_js_mutex;
 
@@ -75,17 +205,20 @@ static char g_last_key = 0;
 static std::atomic<bool> g_got_pyroki_state(false);
 
 enum class ControlMode {
-    Following,  // G: 跟随pyroki（跟随控制器）
+    Following,  // G: 绝对跟随pyroki（跟随控制器）
+    RelativeF,  // H: 相对跟随控制器
     UpIncre,    // W: base frame Z增量模式
     DownIncre,  // S: base frame Z减量模式
     RightIncre, // D: base frame Y减量模式
     LeftIncre,  // A: base frame Y增量模式
     ForwardIncre, // E: base frame X增量模式
     BackwardIncre, // Q: base frame X减量模式
-    InIncre,    // I: 末端沿当前z轴正向增量模式
-    OutIncre,   // K: 末端沿当前z轴负向增
+    InIncre,    // I: 末端沿当前x轴正向增量模式
+    OutIncre,   // O: 末端沿当前x轴负向增
+    IncrementalIdle, // 增量动作完成后的中间状态
     UpRestrain, // R: 用雅可比矩阵约束末端沿q_vector方向不动（将控制器在这个方向上的位移消除掉然后进行IK）
     Turn, // T: 用execute_turn规划一个绕P轴旋转的动作
+    Save, //0: 存矿,规划到save pose
 
 
 
@@ -120,6 +253,9 @@ public:
     void start() {
         RCLCPP_INFO(LOGGER, "Started");
         enter_following();
+        // activate planning monitor
+        mg_->getCurrentState(5.0);
+
     }
     
     void switch_to(ControlMode new_mode) {
@@ -149,23 +285,23 @@ public:
                 plan_incremental_motion({-base_x[0], -base_x[1], -base_x[2]});  // -X
                 break;
             case ControlMode::InIncre: {
-                auto current_state = mg_->getCurrentState();
+                auto current_state = mg_->getCurrentState(5.0);
                 const Eigen::Isometry3d& tf = current_state->getGlobalLinkTransform(mg_->getEndEffectorLink());
                 Eigen::Matrix3d rotation = tf.rotation();
-                Eigen::Vector3d ee_z = rotation.col(2); 
-                plan_incremental_motion({ee_z(0), ee_z(1), ee_z(2)});
+                Eigen::Vector3d ee_x = rotation.col(0); 
+                plan_incremental_motion({ee_x(0), ee_x(1), ee_x(2)});
                 break;
             }
             case ControlMode::OutIncre: {
-                auto current_state = mg_->getCurrentState();
+                auto current_state = mg_->getCurrentState(5.0);
                 const Eigen::Isometry3d& tf = current_state->getGlobalLinkTransform(mg_->getEndEffectorLink());
                 Eigen::Matrix3d rotation = tf.rotation();
-                Eigen::Vector3d ee_z = rotation.col(2); 
-                plan_incremental_motion({-ee_z(0), -ee_z(1), -ee_z(2)}); //末端z反方向
+                Eigen::Vector3d ee_x = rotation.col(0); 
+                plan_incremental_motion({-ee_x(0), -ee_x(1), -ee_x(2)}); //末端x反方向
                 break;
             }
             case ControlMode::UpRestrain: {
-                auto current_state = mg_->getCurrentState();
+                auto current_state = mg_->getCurrentState(5.0);
                 const Eigen::Isometry3d& tf = current_state->getGlobalLinkTransform(mg_->getEndEffectorLink());
                 
                 // 记录末端X轴朝向
@@ -178,7 +314,7 @@ public:
                 break;
             }
             case ControlMode::Turn: {
-                auto current_state = mg_->getCurrentState();
+                auto current_state = mg_->getCurrentState(5.0);
                 const Eigen::Isometry3d& tf = current_state->getGlobalLinkTransform(mg_->getEndEffectorLink());
                 
                 // 记录末端位置
@@ -198,6 +334,10 @@ public:
                 plan_turn();
                 break;
             }
+            case ControlMode::IncrementalIdle:
+                break;
+            case ControlMode::Save:
+                plan_to_save_pose(); break;
             case ControlMode::ENERGY_UNIT_1: get_energy_unit(1); break;
             case ControlMode::ENERGY_UNIT_2: get_energy_unit(2); break;
             case ControlMode::ENERGY_UNIT_3: get_energy_unit(3); break;
@@ -228,17 +368,21 @@ public:
 private:
     
     void enter_following() {
-        std::vector<double> current_joints, target_joints;
+        std::vector<double> target_joints;
+        //std::vector<double> current_joints;
         {
             std::lock_guard<std::mutex> lk(g_js_mutex);
-            current_joints = g_arm_state;
+            //current_joints = g_arm_state;
             target_joints = g_ctrl_js;
         }
         
         double max_diff = 0.0;
+        auto current_joints = mg_->getCurrentJointValues();
         for (size_t i = 0; i < current_joints.size(); ++i) {
             double diff = std::abs(current_joints[i] - target_joints[i]);
             max_diff = std::max(max_diff, diff);
+            RCLCPP_INFO(LOGGER, "Joint %zu: current=%.4f, target=%.4f, diff=%.4f", 
+                        i + 1, current_joints[i], target_joints[i], diff);
         }
         
         const double DIFF_THRESHOLD = 0.1;
@@ -360,30 +504,83 @@ private:
             { std::lock_guard<std::mutex> lk(g_js_mutex); g_arm_state = pt.positions; }
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
+        
+        // 增量动作执行完成后，切换到 IncrementalIdle 状态
+        // 这样下次按同一个键时会从 IncrementalIdle → 该增量模式，从而重新规划
+        if (mode_ == ControlMode::UpIncre || mode_ == ControlMode::DownIncre ||
+            mode_ == ControlMode::RightIncre || mode_ == ControlMode::LeftIncre ||
+            mode_ == ControlMode::ForwardIncre || mode_ == ControlMode::BackwardIncre ||
+            mode_ == ControlMode::InIncre || mode_ == ControlMode::OutIncre) {
+            mode_ = ControlMode::IncrementalIdle;
+            RCLCPP_INFO(LOGGER, "Incremental motion completed, waiting for next command");
+        }
     }
 
 private:
-    void get_energy_unit(int unit_id) {        
-        std::vector<double> target_pose;
-        switch (unit_id) {
-            case 1: target_pose = energy_unit_1; break;
-            case 2: target_pose = energy_unit_2; break;
-            case 3: target_pose = energy_unit_3; break;
-            case 4: target_pose = energy_unit_4; break;
-            case 5: target_pose = energy_unit_5; break;
-            case 6: target_pose = energy_unit_6; break;
+    void plan_to_save_pose() {
+        RCLCPP_INFO(LOGGER, "Planning to save_pose");
+        
+        mg_->setStartStateToCurrentState();
+        
+        // 尝试规划，如果失败则在保持x轴朝向不变的情况下迭代改变y、z轴朝向
+        const int MAX_ATTEMPTS = 10;
+        const double ANGLE_STEP = M_PI / 18;  // 10度为单位进行旋转
+        
+        geometry_msgs::msg::Pose original_target = save_pose;
+        moveit::planning_interface::MoveGroupInterface::Plan plan;
+        moveit::core::MoveItErrorCode rc = moveit::core::MoveItErrorCode::PLANNING_FAILED;
+        
+        for (int attempt = 0; attempt < MAX_ATTEMPTS; ++attempt) {
+            geometry_msgs::msg::Pose target_pose = original_target;
+            
+            if (attempt > 0) {
+                // 提取原始四元数并转换为旋转矩阵
+                Eigen::Quaterniond original_quat(
+                    original_target.orientation.w,
+                    original_target.orientation.x,
+                    original_target.orientation.y,
+                    original_target.orientation.z);
+                Eigen::Matrix3d original_rot = original_quat.toRotationMatrix();
+                
+                // 获取 x 轴方向（保持固定）
+                Eigen::Vector3d x_axis = original_rot.col(0);
+                
+                // 计算旋转角度：在绕 x 轴的平面内旋转
+                double rotation_angle = ANGLE_STEP * attempt;
+                Eigen::AngleAxisd rotation_around_x(rotation_angle, x_axis);
+                
+                // 应用旋转：保持 x 轴不变，改变 y 和 z 轴
+                Eigen::Matrix3d new_rot = original_rot * rotation_around_x.toRotationMatrix();
+                
+                // 转换回四元数
+                Eigen::Quaterniond new_quat(new_rot);
+                new_quat.normalize();
+                
+                target_pose.orientation.x = new_quat.x();
+                target_pose.orientation.y = new_quat.y();
+                target_pose.orientation.z = new_quat.z();
+                target_pose.orientation.w = new_quat.w();
+                
+                RCLCPP_WARN(LOGGER, "Plan to save_pose failed at attempt %d, trying different orientation (angle: %.2f rad)", 
+                    attempt, rotation_angle);
+            }
+            
+            mg_->setPoseTarget(target_pose, mg_->getEndEffectorLink());
+            rc = mg_->plan(plan);
+            
+            if (rc == moveit::core::MoveItErrorCode::SUCCESS) {
+                RCLCPP_INFO(LOGGER, "Plan to save_pose succeeded at attempt %d", attempt + 1);
+                break;
+            }
         }
         
-        RCLCPP_INFO(LOGGER, "Planning to energy_unit_%d", unit_id);
-        
-        //设置规划起点和终点
-        mg_->setStartStateToCurrentState();
-        mg_->setJointValueTarget(target_pose);
-        
-        moveit::planning_interface::MoveGroupInterface::Plan plan;
-        auto rc = mg_->plan(plan);
         if (rc != moveit::core::MoveItErrorCode::SUCCESS) {
-            RCLCPP_WARN(LOGGER, "Plan to energy_unit_%d failed (code=%d)", unit_id, static_cast<int>(rc.val));
+            RCLCPP_WARN(LOGGER, "Plan to save_pose failed after %d attempts (code=%d, error='%s', message='%s', source='%s')",   
+                MAX_ATTEMPTS,
+                static_cast<int>(rc.val),  
+                moveit::core::errorCodeToString(rc).c_str(),  
+                rc.message.c_str(),  
+                rc.source.c_str());  
             return;
         }
         
@@ -391,15 +588,91 @@ private:
         vt_->publishTrajectoryLine(plan.trajectory, jmg_->getLinkModel(mg_->getEndEffectorLink()), jmg_);
         vt_->trigger();
         
-        // 执行轨迹
         write_trajectory(plan.trajectory.joint_trajectory);
     }
     
-    void plan_incremental_motion(const std::vector<double>& direction, double step_size = 0.01) {
+    void get_energy_unit(int unit_id) {        
+        geometry_msgs::msg::Pose target_pose;
+
+        switch (unit_id) {
+            case 1: target_pose = energy_unit_1_pose; break;
+            case 2: target_pose = energy_unit_2_pose; break;
+            case 3: target_pose = energy_unit_3_pose; break;
+            case 4: target_pose = energy_unit_4_pose; break;
+            case 5: target_pose = energy_unit_5_pose; break;
+            case 6: target_pose = energy_unit_6_pose; break;
+        }
+        
+        RCLCPP_INFO(LOGGER, "Planning to energy_unit_%d", unit_id);
+        
+        auto current_pose = mg_->getCurrentPose(mg_->getEndEffectorLink());
+        auto current_joints = mg_->getCurrentJointValues();
         
         mg_->setStartStateToCurrentState();
         
-        auto current_state = mg_->getCurrentState();
+        // 设置目标位置容差（0.05m）
+        mg_->setGoalPositionTolerance(0.05);
+        
+        // 设置目标朝向容差（相比save_pose更严格的朝向约束）
+        mg_->setGoalOrientationTolerance(0.02);  // ~1.15度容差
+        
+        // 尝试规划，如果失败则在目标x、y坐标范围内迭代搜索
+        const double SEARCH_RADIUS = 0.15;  // 15cm范围
+        const int MAX_ATTEMPTS = 10;
+        
+        geometry_msgs::msg::Pose original_target = target_pose;
+        moveit::planning_interface::MoveGroupInterface::Plan plan;
+        moveit::core::MoveItErrorCode rc = moveit::core::MoveItErrorCode::PLANNING_FAILED;
+        
+        for (int attempt = 0; attempt < MAX_ATTEMPTS; ++attempt) {
+            mg_->setPoseTarget(target_pose, mg_->getEndEffectorLink());
+            rc = mg_->plan(plan);
+            
+            if (rc == moveit::core::MoveItErrorCode::SUCCESS) {
+                RCLCPP_INFO(LOGGER, "Plan to energy_unit_%d succeeded at attempt %d", unit_id, attempt + 1);
+                break;
+            }
+            
+            // 如果失败，在目标的x、y坐标范围内尝试邻近位置
+            if (attempt < MAX_ATTEMPTS - 1) {
+                // 使用网格搜索：在x、y方向各尝试多个偏移 (3x3网格 = 9种位置)
+                int grid_index = attempt % 9;
+                double offset_x = ((grid_index % 3) - 1) * SEARCH_RADIUS / 2;  // [-0.075, 0, 0.075]
+                double offset_y = ((grid_index / 3) - 1) * SEARCH_RADIUS / 2;  // [-0.075, 0, 0.075]
+                
+                target_pose.position.x = original_target.position.x + offset_x;
+                target_pose.position.y = original_target.position.y + offset_y;
+                target_pose.position.z = original_target.position.z;
+                target_pose.orientation = original_target.orientation;
+                
+                RCLCPP_WARN(LOGGER, "Plan to energy_unit_%d failed at attempt %d, trying nearby position (offset: %.3f, %.3f)", 
+                    unit_id, attempt + 1, offset_x, offset_y);
+            }
+        }
+        
+        if (rc != moveit::core::MoveItErrorCode::SUCCESS) {
+            RCLCPP_WARN(LOGGER, "Plan to energy_unit_%d failed after %d attempts (code=%d, error='%s', message='%s', source='%s')",   
+                unit_id,
+                MAX_ATTEMPTS,
+                static_cast<int>(rc.val),  
+                moveit::core::errorCodeToString(rc).c_str(),  
+                rc.message.c_str(),  
+                rc.source.c_str());  
+            return;
+        }
+        
+        vt_->deleteAllMarkers();
+        vt_->publishTrajectoryLine(plan.trajectory, jmg_->getLinkModel(mg_->getEndEffectorLink()), jmg_);
+        vt_->trigger();
+        
+        write_trajectory(plan.trajectory.joint_trajectory);
+    }
+    
+    void plan_incremental_motion(const std::vector<double>& direction, double step_size = 0.05) {
+        
+        mg_->setStartStateToCurrentState();
+        
+        auto current_state = mg_->getCurrentState(5.0);
         const std::string ee = mg_->getEndEffectorLink();
         const Eigen::Isometry3d& tf = current_state->getGlobalLinkTransform(ee);
         
@@ -416,21 +689,28 @@ private:
         target.orientation.z = q.z();
         target.orientation.w = q.w();
         
-        mg_->setPoseTarget(target, ee);
+        // 使用 Cartesian 路径规划
+        std::vector<geometry_msgs::msg::Pose> waypoints;
+        waypoints.push_back(mg_->getCurrentPose().pose);  // 起点
+        waypoints.push_back(target);                        // 终点
         
-        moveit::planning_interface::MoveGroupInterface::Plan plan;
-        auto rc = mg_->plan(plan);
-        if (rc != moveit::core::MoveItErrorCode::SUCCESS) {
-            RCLCPP_WARN(LOGGER, "Incremental plan failed (code=%d)", static_cast<int>(rc.val));
+        moveit_msgs::msg::RobotTrajectory trajectory;
+        const double eef_step = 0.005;  // 5mm 的末端步长
+        double fraction = 0.0;
+        
+        fraction = mg_->computeCartesianPath(waypoints, eef_step, trajectory);
+        if (fraction < 0.95) {
+            RCLCPP_WARN(LOGGER, "Cartesian path planning for incremental motion: fraction %.2f", fraction);
             return;
         }
         
         vt_->deleteAllMarkers();
-        vt_->publishTrajectoryLine(plan.trajectory, jmg_->getLinkModel(ee), jmg_);
+        vt_->publishTrajectoryLine(trajectory, jmg_->getLinkModel(ee), jmg_);
         vt_->trigger();
-        RCLCPP_INFO(LOGGER, "Planned incremental motion with %zu points", plan.trajectory.joint_trajectory.points.size());
+        RCLCPP_INFO(LOGGER, "Planned incremental motion with %zu points (fraction: %.2f)", 
+                    trajectory.joint_trajectory.points.size(), fraction);
         
-        write_trajectory(plan.trajectory.joint_trajectory);
+        write_trajectory(trajectory.joint_trajectory);
     }
     
     /**
@@ -452,7 +732,7 @@ private:
         Eigen::Vector3d controller_ee =
             controller_state.getGlobalLinkTransform(mg_->getEndEffectorLink()).translation();
 
-        auto arm_state = mg_->getCurrentState();
+        auto arm_state = mg_->getCurrentState(5.0);
         Eigen::Vector3d current_ee =
             arm_state->getGlobalLinkTransform(mg_->getEndEffectorLink()).translation();
         
@@ -583,11 +863,17 @@ int main(int argc, char** argv)
     opts.automatically_declare_parameters_from_overrides(true);
     auto node = rclcpp::Node::make_shared("flow_with_pyroki", opts);
 
-    rclcpp::executors::SingleThreadedExecutor exec;
+    rclcpp::executors::MultiThreadedExecutor exec(rclcpp::ExecutorOptions(), 2);
     exec.add_node(node);
     std::thread spin_thread([&exec]() { exec.spin(); });
 
+    auto io_cb_group = node->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+    auto control_cb_group = node->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+
     auto js_pub = node->create_publisher<sensor_msgs::msg::JointState>("/joint_states", 10);
+
+    rclcpp::SubscriptionOptions ctrl_sub_opts;
+    ctrl_sub_opts.callback_group = io_cb_group;
 
     auto ctrl_sub = node->create_subscription<sensor_msgs::msg::JointState>(
         "/pyroki_joint_states", 10,
@@ -597,16 +883,39 @@ int main(int argc, char** argv)
                 for (size_t i = 0; i < 6; ++i) {
                     g_ctrl_js[i] = msg->position[i];
                 }
+                // Following 模式下直接同步，避免依赖周期性 update()。
+                if (g_state_machine && g_state_machine->mode_ == ControlMode::Following) {
+                    g_arm_state = g_ctrl_js;
+                }
                 g_got_pyroki_state = true;
             }
-        });
+        },
+        ctrl_sub_opts);
+
+    // 先启动 /joint_states 发布，再初始化 MoveGroup，避免启动期拿不到当前状态。
+    auto pub_timer = node->create_wall_timer(
+        std::chrono::milliseconds(20),
+        [node, js_pub]() {
+            sensor_msgs::msg::JointState m;
+            auto stamp = node->now();
+            if (stamp.nanoseconds() == 0) {
+                // Fallback for missing /clock when sim time is accidentally enabled.
+                stamp = rclcpp::Clock(RCL_SYSTEM_TIME).now();
+            }
+            m.header.stamp = stamp;
+            m.name = JOINT_NAMES;
+            { std::lock_guard<std::mutex> lk(g_js_mutex); m.position = g_arm_state; }
+            js_pub->publish(m);
+        },
+        io_cb_group);
 
 
     // 初始化MoveIt
     auto mg = std::make_shared<moveit::planning_interface::MoveGroupInterface>(node, PLANNING_GROUP);
     mg->setEndEffectorLink("gripper");
-    const auto* jmg = mg->getRobotModel()->getJointModelGroup(PLANNING_GROUP);
-
+    // const auto* jmg = mg->getRobotModel()->getJointModelGroup(PLANNING_GROUP);
+    const moveit::core::JointModelGroup* jmg =
+        mg->getCurrentState()->getJointModelGroup(PLANNING_GROUP);
     auto vt = std::make_shared<moveit_visual_tools::MoveItVisualTools>(
         node, "base_link", "flow_with_pyroki", mg->getRobotModel());
     vt->deleteAllMarkers();
@@ -618,37 +927,31 @@ int main(int argc, char** argv)
     g_state_machine = std::make_unique<ControlStateMachine>(node, mg, jmg, vt, js_pub);
     g_state_machine->start();
     
-    // 定期发布状态 (50Hz)
-    auto pub_timer = node->create_wall_timer(
-        std::chrono::milliseconds(20),
-        [node, js_pub]() {
-            // 更新状态机 (处理Following模式的同步)
-            if (g_state_machine) {
-                g_state_machine->update();
-            }
-            
-            sensor_msgs::msg::JointState m;
-            m.header.stamp = node->now();
-            m.name = JOINT_NAMES;
-            { std::lock_guard<std::mutex> lk(g_js_mutex); m.position = g_arm_state; }
-            js_pub->publish(m);
-        });
-    
     RCLCPP_INFO(LOGGER, "Ready. Keys: G(Following) W/S/A/D/E/Q(Base) I/K(EE) R(UpRestrain) T(Turn) 1-6(Energy) X(Quit)");
 
     // 键盘输入订阅
+    rclcpp::SubscriptionOptions key_sub_opts;
+    key_sub_opts.callback_group = control_cb_group;
+
     auto key_sub = node->create_subscription<std_msgs::msg::String>(
         "/key_input", 10,
         [](const std_msgs::msg::String::SharedPtr msg) {
             if (msg->data.empty()) return;
             std::lock_guard<std::mutex> lk(g_key_mutex);
             g_last_key = msg->data[0];
-        });
+        },
+        key_sub_opts);
+    
+    static int log_counter = 0;
 
     // 键盘处理和状态机更新
     auto key_timer = node->create_wall_timer(
         std::chrono::milliseconds(20),
         [node]() {
+            if (!g_state_machine) {
+                return;
+            }
+
             char key = 0;
             {
                 std::lock_guard<std::mutex> lk(g_key_mutex);
@@ -656,72 +959,58 @@ int main(int argc, char** argv)
                 g_last_key = 0;
             }
             
-            if (key == 0) {
-                if (g_state_machine) {
-                    g_state_machine->update();
-                }
-                return;
+            if (key == 0 && g_state_machine->mode_ == ControlMode::Following) {
+                g_state_machine->update();
             }
-            
-            // 处理按键
+
+            const ControlMode prev_mode = g_state_machine->mode_;
+            log_counter++;
+            if (log_counter % 200 == 0) {
+                RCLCPP_INFO(LOGGER, "Current State Mode: %d", static_cast<int>(g_state_machine->mode_));
+            }   
             switch (key) {
                 case 'G':
-                    if (g_state_machine) {
-                        g_state_machine->switch_to(ControlMode::Following);
-                    }
+                    RCLCPP_INFO(LOGGER, "Switched to G mode");
+                    g_state_machine->switch_to(ControlMode::Following);
                     break;
                 case 'W':
-                    if (g_state_machine) {
-                        g_state_machine->switch_to(ControlMode::UpIncre);
-                    }
+                    RCLCPP_INFO(LOGGER, "Switched to W mode");
+                    g_state_machine->switch_to(ControlMode::UpIncre);
                     break;
                 case 'S':
-                    if (g_state_machine) {
-                        g_state_machine->switch_to(ControlMode::DownIncre);
-                    }
+                    RCLCPP_INFO(LOGGER, "Switched to S mode");
+                    g_state_machine->switch_to(ControlMode::DownIncre);
                     break;
                 case 'A':
-                    if (g_state_machine) {
-                        g_state_machine->switch_to(ControlMode::LeftIncre);
-                    }
+                    RCLCPP_INFO(LOGGER, "Switched to A mode");
+                    g_state_machine->switch_to(ControlMode::LeftIncre);
                     break;
                 case 'D':
-                    if (g_state_machine) {
-                        g_state_machine->switch_to(ControlMode::RightIncre);
-                    }
+                    g_state_machine->switch_to(ControlMode::RightIncre);
                     break;
                 case 'E':
-                    if (g_state_machine) {
-                        g_state_machine->switch_to(ControlMode::ForwardIncre);
-                    }
+                    g_state_machine->switch_to(ControlMode::ForwardIncre);
                     break;
                 case 'Q':
-                    if (g_state_machine) {
-                        g_state_machine->switch_to(ControlMode::BackwardIncre);
-                    }
+                    g_state_machine->switch_to(ControlMode::BackwardIncre);
                     break;
                 case 'I':
-                    if (g_state_machine) {
-                        g_state_machine->switch_to(ControlMode::InIncre);
-                    }
+                    g_state_machine->switch_to(ControlMode::InIncre);
                     break;
                 case 'O':
-                    if (g_state_machine) {
-                        g_state_machine->switch_to(ControlMode::OutIncre);
-                    }
+                    g_state_machine->switch_to(ControlMode::OutIncre);
                     break;
                 case 'R':
-                    if (g_state_machine) {
-                        g_state_machine->switch_to(ControlMode::UpRestrain);
-                    }
+                    g_state_machine->switch_to(ControlMode::UpRestrain);
                     break;
                 case 'T':
-                    if (g_state_machine) {
-                        g_state_machine->switch_to(ControlMode::Turn);
-                    }
+                    g_state_machine->switch_to(ControlMode::Turn);
                     break;
                 case 'X':
                     rclcpp::shutdown();
+                    break;
+                case '0':
+                    g_state_machine->switch_to(ControlMode::Save);
                     break;
                 case '1':
                 case '2':
@@ -729,7 +1018,7 @@ int main(int argc, char** argv)
                 case '4':
                 case '5':
                 case '6':
-                    if (g_state_machine) {
+                    {
                         ControlMode mode = static_cast<ControlMode>(static_cast<int>(ControlMode::ENERGY_UNIT_1) + (key - '1'));
                         g_state_machine->switch_to(mode);
                     }
@@ -739,15 +1028,20 @@ int main(int argc, char** argv)
                 
             }
             
-            // 状态更新
-            if (g_state_machine) {
+            // 仅在模式切换后触发 update()
+            if (g_state_machine->mode_ != prev_mode) {
                 g_state_machine->update();
             }
-        });
+        },
+        control_cb_group);
 
     while (rclcpp::ok())
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
+    // Destroy state machine first so timer callbacks stop doing work before
+    // the node context becomes invalid (prevents vt_->trigger() crash on SIGINT)
+    g_state_machine.reset();
+    exec.cancel();
     if (spin_thread.joinable()) spin_thread.join();
     return 0;
 }
