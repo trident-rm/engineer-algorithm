@@ -6,6 +6,26 @@
 #include "utils.hpp"
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("z_plan_movegroup");
+static const geometry_msgs::msg::Pose energy_unit_1_pose = []() {
+    Eigen::Matrix3d rot;
+    rot << 0, 0, 1,
+           0, 1, 0,
+          -1, 0, 0;
+
+          
+    Eigen::Quaterniond q(rot);
+    q.normalize();
+    
+    geometry_msgs::msg::Pose p;
+    p.position.x = 0.3;
+    p.position.y = 0.0;
+    p.position.z = 0.525;
+    p.orientation.x = q.x();
+    p.orientation.y = q.y();
+    p.orientation.z = q.z();
+    p.orientation.w = q.w();
+    return p;
+}();
 
 int main(int argc, char** argv)
 {
@@ -20,16 +40,17 @@ int main(int argc, char** argv)
   executor.add_node(move_group_node);
   std::thread([&executor]() { executor.spin(); }).detach();
 
-  static const std::string PLANNING_GROUP = "panda_arm";
+  static const std::string PLANNING_GROUP = "arm";
   moveit::planning_interface::MoveGroupInterface move_group(move_group_node, PLANNING_GROUP);
 
   moveit::planning_interface::PlanningSceneInterface planning_scene_interface;
-
+ 
+  move_group->setEndEffectorLink("gripper");
   const moveit::core::JointModelGroup* joint_model_group =
       move_group.getCurrentState()->getJointModelGroup(PLANNING_GROUP);
 
   namespace rvt = rviz_visual_tools;
-  moveit_visual_tools::MoveItVisualTools visual_tools(move_group_node, "panda_link0", "z_plan_tutorial",
+  moveit_visual_tools::MoveItVisualTools visual_tools(move_group_node, "base_link", "z_plan_tutorial",
                                                       move_group.getRobotModel());
 
   visual_tools.deleteAllMarkers();
@@ -44,88 +65,51 @@ int main(int argc, char** argv)
   // Batch publishing is used to reduce the number of messages being sent to RViz for large visualizations
   visual_tools.trigger();
 
-
-  RCLCPP_INFO(LOGGER, "Planning frame: %s", move_group.getPlanningFrame().c_str());
-  RCLCPP_INFO(LOGGER, "End effector link: %s", move_group.getEndEffectorLink().c_str());
-
-  RCLCPP_INFO(LOGGER, "Available Planning Groups:");
   std::copy(move_group.getJointModelGroupNames().begin(), move_group.getJointModelGroupNames().end(),
             std::ostream_iterator<std::string>(std::cout, ", "));
 
-
-  visual_tools.prompt("Press 'next' in the RvizVisualToolsGui window to start the demo");
-  geometry_msgs::msg::Pose target_pose1;
-  target_pose1.orientation.w = 1.0;
-  target_pose1.position.x = 0.28;
-  target_pose1.position.y = -0.2;
-  target_pose1.position.z = 0.5;
-  move_group.setPoseTarget(target_pose1);
-
-  moveit::planning_interface::MoveGroupInterface::Plan my_plan;
-
-  bool success = (move_group.plan(my_plan) == moveit::core::MoveItErrorCode::SUCCESS);
-
-  RCLCPP_INFO(LOGGER, "Visualizing plan 1 (pose goal) %s", success ? "" : "FAILED");
-
-  RCLCPP_INFO(LOGGER, "Visualizing plan 1 as trajectory line");
-  visual_tools.publishAxisLabeled(target_pose1, "pose1");
-  visual_tools.publishText(text_pose, "Pose_Goal", rvt::WHITE, rvt::XLARGE);
-  visual_tools.publishTrajectoryLine(my_plan.trajectory, joint_model_group);
-  visual_tools.trigger();
-  visual_tools.prompt("Press 'next' in the RvizVisualToolsGui window to execute");
-
-
-  RCLCPP_INFO(LOGGER, "Executing plan 1 (moving to pose goal)...");
-  move_group.execute(my_plan);
+  geometry_msgs::msg::Pose target_pose = energy_unit_1_pose;
+  moveit::planning_interface::MoveGroupInterface::Plan plan;
+    
+  moveit::core::MoveItErrorCode rc = moveit::core::MoveItErrorCode::PLANNING_FAILED;
+  auto start_state = std::make_shared<moveit::core::RobotState>(mg_->getRobotModel());
+  start_state.setJointGroupPositions(joint_model_group, {0.0,0.0,0.0,0.0,0.0,0.0})
+  move_group->setStartState(*start_state)
+  const double SEARCH_RADIUS = 0.15;  // 15cm范围
+  const int MAX_ATTEMPTS = 10;
+  for (int attempt = 0; attempt < MAX_ATTEMPTS; ++attempt) {
+            move_group->setPoseTarget(target_pose, move_group->getEndEffectorLink());
+            rc = move_group->plan(plan);
+            
+            if (rc == moveit::core::MoveItErrorCode::SUCCESS) {
+                std::ofstream outfile("trajectory.msg")
+                outfile<<plan.trajectory;
+                RCLCPP_INFO(LOGGER, "Plan to energy_unit_%d succeeded at attempt %d", unit_id, attempt + 1);
+                break;
+            }
+            
+            // 如果失败，在目标的x、y坐标范围内尝试邻近位置
+            if (attempt < MAX_ATTEMPTS - 1) {
+                // 使用网格搜索：在x、y方向各尝试多个偏移 (3x3网格 = 9种位置)
+                int grid_index = attempt % 9;
+                double offset_x = ((grid_index % 3) - 1) * SEARCH_RADIUS / 2;  // [-0.075, 0, 0.075]
+                double offset_y = ((grid_index / 3) - 1) * SEARCH_RADIUS / 2;  // [-0.075, 0, 0.075]
+                
+                target_pose.position.x = original_target.position.x + offset_x;
+                target_pose.position.y = original_target.position.y + offset_y;
+                target_pose.position.z = original_target.position.z;
+                target_pose.orientation = original_target.orientation;
+                
+                RCLCPP_WARN(LOGGER, "Plan to energy_unit_%d failed at attempt %d, trying nearby position (offset: %.3f, %.3f)", 
+                    unit_id, attempt + 1, offset_x, offset_y);
+            }
+        }
   
-  visual_tools.prompt("Press 'next' in the RvizVisualToolsGui window to continue with Cartesian path");
-
-  // Cartesian Paths
-  geometry_msgs::msg::Pose current_pose = move_group.getCurrentPose().pose;
   
-  std::vector<geometry_msgs::msg::Pose> waypoints;
-  waypoints.push_back(current_pose);
 
-  // Move down along Z axis by 0.1m
-  geometry_msgs::msg::Pose target_pose2 = current_pose;
-  target_pose2.position.z -= 0.1;
-  waypoints.push_back(target_pose2);
-
-  // We want the Cartesian path to be interpolated at a resolution of 1 cm,
-  // which is why we will specify 0.01 as the max step in Cartesian translation.
-  const double eef_step = 0.01;
-  moveit_msgs::msg::RobotTrajectory trajectory;
-  double fraction = move_group.computeCartesianPath(waypoints, eef_step, trajectory);
-
-  // 提取并打印轨迹数据
-  auto trajectory_dict = extractTrajectory(trajectory);
-  printTrajectory(trajectory_dict);
-
-  RCLCPP_INFO(LOGGER, "Visualizing Cartesian path (%.2f%% achieved)", fraction * 100.0);
-
-  // Visualize the plan in RViz
-  visual_tools.deleteAllMarkers();
-  visual_tools.publishText(text_pose, "Cartesian_Path", rvt::WHITE, rvt::XLARGE);
-  visual_tools.publishPath(waypoints, rvt::LIME_GREEN, rvt::SMALL);
-  for (std::size_t i = 0; i < waypoints.size(); ++i)
-    visual_tools.publishAxisLabeled(waypoints[i], "pt" + std::to_string(i), rvt::SMALL);
+  visual_tools.publishTrajectoryLine(plan.trajectory;.trajectory, joint_model_group);
   visual_tools.trigger();
-  visual_tools.prompt("Press 'next' in the RvizVisualToolsGui window to execute Cartesian path");
-
-
-  if (fraction > 0.99) {
-    RCLCPP_INFO(LOGGER, "Executing Cartesian path...");
-    moveit::planning_interface::MoveGroupInterface::Plan cartesian_plan;
-    cartesian_plan.trajectory = trajectory;
-    move_group.execute(cartesian_plan);
-  } else {
-    RCLCPP_WARN(LOGGER, "Cartesian path planning only achieved %.2f%% of the path", fraction * 100.0);
-  }
-
-  // END_TUTORIAL
-  visual_tools.prompt("Press 'next' to finish the demo");
-
-  RCLCPP_INFO(LOGGER, "Demo complete!");
+  
   rclcpp::shutdown();
   return 0;
 }

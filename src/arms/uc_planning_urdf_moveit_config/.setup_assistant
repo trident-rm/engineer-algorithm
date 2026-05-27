@@ -1,0 +1,25 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: uc_planning_urdf
+    relative_path: urdf/uc_planning_urdf.urdf
+  srdf:
+    relative_path: config/uc_planning_urdf.srdf
+  package_settings:
+    author_name: grace
+    author_email: hanyuzhou110@gmail.com
+    generated_timestamp: 1779919443
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity
+  modified_urdf:
+    xacros:
+      - control_xacro
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity

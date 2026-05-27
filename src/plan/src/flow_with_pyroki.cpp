@@ -5,6 +5,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <fstream>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -20,6 +22,7 @@
 #include <moveit_visual_tools/moveit_visual_tools.h>
 #include <moveit/kinematic_constraints/utils.hpp>
 
+
 //全局常量
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("flow_with_pyroki");
 static const std::string PLANNING_GROUP = "arm";
@@ -33,7 +36,7 @@ static const geometry_msgs::msg::Pose energy_unit_1_pose = []() {
     Eigen::Matrix3d rot;
     rot << 0, 0, 1,
            0, 1, 0,
-          -1, 0, 0;
+           -1, 0, 1;
     Eigen::Quaterniond q(rot);
     q.normalize();
     
@@ -103,9 +106,9 @@ static const geometry_msgs::msg::Pose energy_unit_4_pose = []() {
     q.normalize();
     
     geometry_msgs::msg::Pose p;
-    p.position.x = 0.3;
-    p.position.y = 0.0;
-    p.position.z = 0.1125;
+    //p.position.x = 0.3;
+    //p.position.y = 0.0;
+    //p.position.z = 0.1125;
     p.orientation.x = q.x();
     p.orientation.y = q.y();
     p.orientation.z = q.z();
@@ -229,6 +232,74 @@ enum class ControlMode {
     ENERGY_UNIT_5, // 5: 去取能量单元5      
     ENERGY_UNIT_6  // 6: 去取能量单元6
 };
+
+/**
+ * @brief  从 MoveIt 轨迹消息中提取关节位置和时间信息
+ * @param  robot_trajectory  MoveIt 机器人轨迹消息
+ * @retval std::map<std::string, std::vector<double>>  包含各关节位置和时间戳的字典
+ */
+std::map<std::string, std::vector<double>> extractTrajectory(
+    const moveit_msgs::msg::RobotTrajectory& robot_trajectory)
+{
+    std::map<std::string, std::vector<double>> result;
+    
+    const auto& joint_traj = robot_trajectory.joint_trajectory;
+    const auto& joint_names = joint_traj.joint_names;
+    const auto& points = joint_traj.points;
+    
+    if (joint_names.empty() || points.empty()) {
+        return result;
+    }
+    
+    for (const auto& name : joint_names) {
+        result[name] = std::vector<double>();
+        result[name].reserve(points.size());
+    }
+
+    result["time_from_start"] = std::vector<double>();
+    result["time_from_start"].reserve(points.size());
+    
+    for (const auto& point : points) {
+        for (size_t i = 0; i < joint_names.size(); ++i) {
+            if (i < point.positions.size()) {
+                result[joint_names[i]].push_back(point.positions[i]);
+            } else {
+                result[joint_names[i]].push_back(0.0);
+            }
+        }
+        double time_seconds = point.time_from_start.sec + 
+                             point.time_from_start.nanosec * 1e-9;
+        result["time_from_start"].push_back(time_seconds);
+    }
+    
+    return result;
+}
+
+bool appendTrajectoryToFile(
+    const std::map<std::string, std::vector<double>>& trajectory_data,
+    int unit_id,
+    const std::string& file_path = "/tmp/flow_with_pyroki_trajectory.log")
+{
+    std::ofstream out(file_path, std::ios::app);
+    if (!out.is_open()) {
+        return false;
+    }
+
+    out << "unit_id=" << unit_id << '\n';
+    for (const auto& kv : trajectory_data) {
+        out << kv.first << "=";
+        for (size_t i = 0; i < kv.second.size(); ++i) {
+            if (i > 0) {
+                out << ",";
+            }
+            out << kv.second[i];
+        }
+        out << '\n';
+    }
+    out << "---" << '\n';
+
+    return true;
+}
 
 /**
  * @brief 状态机: 管理多种控制模式
@@ -629,6 +700,14 @@ private:
             rc = mg_->plan(plan);
             
             if (rc == moveit::core::MoveItErrorCode::SUCCESS) {
+                auto trajectory_data = extractTrajectory(plan.trajectory);  
+                if (appendTrajectoryToFile(trajectory_data, unit_id)) {
+                    RCLCPP_INFO(LOGGER,
+                        "Trajectory data written to /tmp/flow_with_pyroki_trajectory.log");
+                } else {
+                    RCLCPP_WARN(LOGGER,
+                        "Failed to write trajectory data to /tmp/flow_with_pyroki_trajectory.log");
+                }
                 RCLCPP_INFO(LOGGER, "Plan to energy_unit_%d succeeded at attempt %d", unit_id, attempt + 1);
                 break;
             }
