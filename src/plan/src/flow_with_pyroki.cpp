@@ -30,7 +30,7 @@ static const double STEP = 0.01;
 static const std::vector<std::string> JOINT_NAMES = {
     "joint1","joint2","joint3","joint4","joint5","joint6"};
 static const std::vector<double> energy_unit_1 = {
-    0.0, -1.57, 1.57, 0.0, 0.0, 0.0
+    0.0, -0.85, 0.82, 0.0, 0.15, -1.57
 };
 static const geometry_msgs::msg::Pose energy_unit_1_pose = []() {
     Eigen::Matrix3d rot;
@@ -658,9 +658,10 @@ private:
         write_trajectory(plan.trajectory.joint_trajectory);
     }
     
-    void get_energy_unit(int unit_id) {        
-        geometry_msgs::msg::Pose target_pose;
-        
+    void get_energy_unit(int unit_id) {     
+        std::vector<double> target_pose;   
+        //geometry_msgs::msg::Pose target_pose;
+        /** 
         switch (unit_id) {
             case 1: target_pose = energy_unit_1_pose; break;
             case 2: target_pose = energy_unit_2_pose; break;
@@ -668,6 +669,15 @@ private:
             case 4: target_pose = energy_unit_4_pose; break;
             case 5: target_pose = energy_unit_5_pose; break;
             case 6: target_pose = energy_unit_6_pose; break;
+        }
+        */
+        switch (unit_id) {
+            case 1: target_pose = energy_unit_1; break;
+            case 2: target_pose = energy_unit_2; break;
+            case 3: target_pose = energy_unit_3; break;
+            case 4: target_pose = energy_unit_4; break;
+            case 5: target_pose = energy_unit_5; break;
+            case 6: target_pose = energy_unit_6; break;
         }
         
         RCLCPP_INFO(LOGGER, "Planning to energy_unit_%d", unit_id);
@@ -678,11 +688,15 @@ private:
         mg_->setStartStateToCurrentState();
         
         // 设置目标位置容差（0.05m）
-        mg_->setGoalPositionTolerance(0.05);
-        
+        //mg_->setGoalPositionTolerance(0.05);
+        mg_ ->setJointValueTarget(target_pose);
+        moveit::planning_interface::MoveGroupInterface::Plan plan;
+        moveit::core::MoveItErrorCode rc = mg_-> plan(plan);
+
         // 设置目标朝向容差（相比save_pose更严格的朝向约束）
-        mg_->setGoalOrientationTolerance(0.02);  // ~1.15度容差
-        
+        //mg_->setGoalOrientationTolerance(0.02);  // ~1.15度容差
+
+        /** 
         // 尝试规划，如果失败则在目标x、y坐标范围内迭代搜索
         const double SEARCH_RADIUS = 0.15;  // 15cm范围
         const int MAX_ATTEMPTS = 10;
@@ -737,6 +751,7 @@ private:
                 rc.source.c_str());  
             return;
         }
+        */
         
         vt_->deleteAllMarkers();
         vt_->publishTrajectoryLine(plan.trajectory, jmg_->getLinkModel(mg_->getEndEffectorLink()), jmg_);
