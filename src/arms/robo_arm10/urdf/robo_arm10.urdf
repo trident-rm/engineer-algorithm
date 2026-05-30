@@ -384,7 +384,7 @@
     name="gripper"
     type="fixed">
     <origin
-      xyz="0 0 0.15"
+      xyz="0 0 0.1854"
       rpy="0 0 0" />
     <parent
       link="link6" />

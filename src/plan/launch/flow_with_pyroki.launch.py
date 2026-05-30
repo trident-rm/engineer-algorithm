@@ -16,7 +16,7 @@ from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
-    moveit_config = MoveItConfigsBuilder("uc_planning_urdf", package_name="uc_planning_urdf_moveit_config").to_moveit_configs()
+    moveit_config = MoveItConfigsBuilder("robo_arm10", package_name="robo_arm10_moveit_config").to_moveit_configs()
 
     robot_state_publisher = Node(
         package="robot_state_publisher",
@@ -43,7 +43,7 @@ def generate_launch_description():
     )
 
     rviz_config_file = os.path.join(
-        get_package_share_directory("uc_planning_urdf_moveit_config"),
+        get_package_share_directory("robo_arm10_moveit_config"),
         "config",
         "moveit.rviz",
     )

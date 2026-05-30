@@ -36,7 +36,7 @@ static const geometry_msgs::msg::Pose energy_unit_1_pose = []() {
     Eigen::Matrix3d rot;
     rot << 0, 0, 1,
            0, 1, 0,
-           -1, 0, 1;
+           -1, 0, 0;
     Eigen::Quaterniond q(rot);
     q.normalize();
     
@@ -271,21 +271,17 @@ std::map<std::string, std::vector<double>> extractTrajectory(
                              point.time_from_start.nanosec * 1e-9;
         result["time_from_start"].push_back(time_seconds);
     }
-    
     return result;
 }
-
 bool appendTrajectoryToFile(
     const std::map<std::string, std::vector<double>>& trajectory_data,
-    int unit_id,
-    const std::string& file_path = "/tmp/flow_with_pyroki_trajectory.log")
+    const std::string& file_path = "/home/hku/robo_arm/last_incremental_motion_trajectory.log")
 {
-    std::ofstream out(file_path, std::ios::app);
+    std::ofstream out(file_path);
     if (!out.is_open()) {
         return false;
     }
 
-    out << "unit_id=" << unit_id << '\n';
     for (const auto& kv : trajectory_data) {
         out << kv.first << "=";
         for (size_t i = 0; i < kv.second.size(); ++i) {
@@ -664,7 +660,7 @@ private:
     
     void get_energy_unit(int unit_id) {        
         geometry_msgs::msg::Pose target_pose;
-
+        
         switch (unit_id) {
             case 1: target_pose = energy_unit_1_pose; break;
             case 2: target_pose = energy_unit_2_pose; break;
@@ -697,11 +693,12 @@ private:
         
         for (int attempt = 0; attempt < MAX_ATTEMPTS; ++attempt) {
             mg_->setPoseTarget(target_pose, mg_->getEndEffectorLink());
+            //mg_ -> setPose
             rc = mg_->plan(plan);
             
             if (rc == moveit::core::MoveItErrorCode::SUCCESS) {
                 auto trajectory_data = extractTrajectory(plan.trajectory);  
-                if (appendTrajectoryToFile(trajectory_data, unit_id)) {
+                if (appendTrajectoryToFile(trajectory_data)) {
                     RCLCPP_INFO(LOGGER,
                         "Trajectory data written to /tmp/flow_with_pyroki_trajectory.log");
                 } else {
@@ -727,6 +724,7 @@ private:
                 RCLCPP_WARN(LOGGER, "Plan to energy_unit_%d failed at attempt %d, trying nearby position (offset: %.3f, %.3f)", 
                     unit_id, attempt + 1, offset_x, offset_y);
             }
+            
         }
         
         if (rc != moveit::core::MoveItErrorCode::SUCCESS) {
@@ -743,11 +741,11 @@ private:
         vt_->deleteAllMarkers();
         vt_->publishTrajectoryLine(plan.trajectory, jmg_->getLinkModel(mg_->getEndEffectorLink()), jmg_);
         vt_->trigger();
-        
+        appendTrajectoryToFile(extractTrajectory(plan.trajectory));
         write_trajectory(plan.trajectory.joint_trajectory);
     }
     
-    void plan_incremental_motion(const std::vector<double>& direction, double step_size = 0.05) {
+    void plan_incremental_motion(const std::vector<double>& direction, double step_size = 0.15) {
         
         mg_->setStartStateToCurrentState();
         
@@ -788,7 +786,7 @@ private:
         vt_->trigger();
         RCLCPP_INFO(LOGGER, "Planned incremental motion with %zu points (fraction: %.2f)", 
                     trajectory.joint_trajectory.points.size(), fraction);
-        
+        appendTrajectoryToFile(extractTrajectory(trajectory));
         write_trajectory(trajectory.joint_trajectory);
     }
     
@@ -928,10 +926,7 @@ private:
 
         return result;
     }
-
 };
-
-
 // 全局状态机实例
 std::unique_ptr<ControlStateMachine> g_state_machine = nullptr;
 

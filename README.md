@@ -199,3 +199,5 @@ y方向不用调
 low_with_pyroki-3] [INFO] [1779451698.911733369] [flow_with_pyroki.moveit.ros.move_group_interface]: Planning request aborted
 [flow_with_pyroki-3] [ERROR] [1779451698.912200396] [flow_with_pyroki.moveit.ros.move_group_interface]: MoveGroupInterface::plan() failed or timeout reached
 [flow_with_pyroki-3] [WARN] [1779451698.912329098] [flow_with_pyroki]: Plan to energy_unit_1 failed (code=99999, error='FAILURE', message='', source='')
+
+-0.7854 
