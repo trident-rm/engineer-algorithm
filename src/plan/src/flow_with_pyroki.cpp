@@ -51,7 +51,7 @@ static const geometry_msgs::msg::Pose energy_unit_1_pose = []() {
     return p;
 }();
 static const std::vector<double> energy_unit_2 = {
-    0.0, -1.57, 1.57, 0.0, 0.0, 0.0
+     0.0, -0.85, 0.82, 0.0, 0.15, 0.55
 };
 static const geometry_msgs::msg::Pose energy_unit_2_pose = []() {
     Eigen::Matrix3d rot;
@@ -72,7 +72,7 @@ static const geometry_msgs::msg::Pose energy_unit_2_pose = []() {
     return p;
 }();
 static const std::vector<double> energy_unit_3 = {
-    0.0, -1.57, 1.57, 0.0, 0.0, 0.0
+    0.0, -0.85, 0.82, 0.0, 0.15,-0.75, 
 };
 static const geometry_msgs::msg::Pose energy_unit_3_pose = []() {
     Eigen::Matrix3d rot;
@@ -95,7 +95,7 @@ static const geometry_msgs::msg::Pose energy_unit_3_pose = []() {
 }();
 
 static const std::vector<double> energy_unit_4 = {
-    0.0, -1.57, 1.57, 0.0, 0.0, 0.0
+    0.0, -0.85, 0.82, 0.0, 0.15, -1.57
 };
 static const geometry_msgs::msg::Pose energy_unit_4_pose = []() {
     Eigen::Matrix3d rot;
@@ -116,7 +116,7 @@ static const geometry_msgs::msg::Pose energy_unit_4_pose = []() {
     return p;
 }();
 static const std::vector<double> energy_unit_5 = {
-    0.0, -1.57, 1.57, 0.0, 0.0, 0.0
+    0.0, -0.85, 0.82, 0.0, 0.15, -2.23
 };
 static const geometry_msgs::msg::Pose energy_unit_5_pose = []() {
     Eigen::Matrix3d rot;
@@ -137,7 +137,7 @@ static const geometry_msgs::msg::Pose energy_unit_5_pose = []() {
     return p;
 }();
 static const std::vector<double> energy_unit_6 = {
-    0.0, -1.57, 1.57, 0.0, 0.0, 0.0
+    0.0, -0.85, 0.82, 0.0, 0.15, 2.23
 };
 static const geometry_msgs::msg::Pose energy_unit_6_pose = []() {
     Eigen::Matrix3d rot;
