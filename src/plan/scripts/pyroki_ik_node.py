@@ -12,6 +12,35 @@ import sys
 import time
 import numpy as np
 
+
+def _patch_numpy_asarray_copy_kwarg() -> None:
+    """Provide NumPy 2.x-style copy= support for older NumPy releases.
+
+    JAX 0.9.x may call numpy.asarray(..., copy=...), but NumPy 1.26 does not
+    accept that keyword. Patch only this process before importing JAX users.
+    """
+    try:
+        np.asarray([0.0], copy=False)
+        return
+    except TypeError:
+        pass
+
+    original_asarray = np.asarray
+
+    def compat_asarray(a, dtype=None, order=None, *, device=None, copy=None, like=None):
+        if device is not None:
+            raise NotImplementedError("numpy.asarray(device=...) requires NumPy >= 2.0")
+        if like is not None:
+            return np.array(a, dtype=dtype, order=order, copy=copy, like=like)
+        if copy is True:
+            return np.array(a, dtype=dtype, order=order, copy=True)
+        return original_asarray(a, dtype=dtype, order=order)
+
+    np.asarray = compat_asarray
+
+
+_patch_numpy_asarray_copy_kwarg()
+
 # pyroki_snippets 在 pyroki 仓库的 examples/ 下, 不是 pip 包
 sys.path.insert(0, "/home/hku/third_party/pyroki/examples")
 

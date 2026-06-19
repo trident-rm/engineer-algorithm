@@ -51,7 +51,7 @@ ros2 launch plan real_world_new.launch.py
 # 终端1: 启动pyroki IK节点
 python3 ./src/plan/scripts/pyroki_ik_node.py
 
-# 终端2: 启动RViz和MoveIt
+# 终端2: 启动RViz和MoveIt(no need)
 ros2 launch plan pyroki_ik.launch.py(move these into flow_with_pyroki.launch.py)
 
 # 终端3: 启动flow节点
@@ -178,6 +178,27 @@ ros2 topic echo /joint_states --once
 - 删除robo_arm10的base_link inertia（KDL不支持root link带inertia）
 - 重构flow_with_pyroki.launch.py
 
+**May 20**:
+- created three threads in flow_with_pyroki:main to provent the process from blocking due to the way moveit writes it source code.
+
+**June 19**
+- sometimes setup.bash may not be generated under a clean environment, which induces a failure of dynamic linking when starting rviz2. In case of this, rebuild in a new shell:
+env -i HOME=$HOME USER=$USER TERM=xterm-256color PATH=/usr/bin:/bin:/usr/sbin:/sbin bash --noprofile --norc
+source /opt/ros/jazzy/setup.bash
+cd ~/robo_arm
+rm -rf build install log
+colcon build
+
+or 
+
+source ~/.bashrc
+source /opt/ros/jazzy/setup.bash
+source ~/robo_arm/install/setup.bash
+rviz2
+
+
+usually, use this order: source /opt/ros/jazzy/setup.bash; source /home/hku/ws_moveit/install/setup.bash; source ~/robo_arm/install/setup.bash (to prevent using ws_moveit2)
+
 ### 路径配置
 如果工作目录不在 `/home/hku/robo_arm`，需要更新 `plan/CMakeLists.txt` 中的绝对路径
 
@@ -196,8 +217,4 @@ ros2 topic echo /joint_states --once
 x方向需要加上臂base到轮子最前面的距离
 y方向不用调
 
-low_with_pyroki-3] [INFO] [1779451698.911733369] [flow_with_pyroki.moveit.ros.move_group_interface]: Planning request aborted
-[flow_with_pyroki-3] [ERROR] [1779451698.912200396] [flow_with_pyroki.moveit.ros.move_group_interface]: MoveGroupInterface::plan() failed or timeout reached
-[flow_with_pyroki-3] [WARN] [1779451698.912329098] [flow_with_pyroki]: Plan to energy_unit_1 failed (code=99999, error='FAILURE', message='', source='')
-
--0.7854 
+## How to run package pose_gen

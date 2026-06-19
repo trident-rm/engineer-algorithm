@@ -1,0 +1,114 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# ROS2
+install/
+build/
+log/
+logs/
+
+# Colcon build artifacts
+.colcon_install_layout
+.colcon_build_layout
+
+# Generated files
+*__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# ROS2 specific generated files
+**/rosidl_generator_*
+**/rosidl_typesupport_*
+*.msg.h
+*.srv.h
+*.action.h
+
+# Launch files cache
+launch.json
+
+# Parameter files
+*.yaml.bak
+*.yml.bak
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.cproject
+
+# QT Creator
+CMakeLists.txt.user
+
+# Emacs
+.#*

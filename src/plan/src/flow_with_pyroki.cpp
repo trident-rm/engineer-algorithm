@@ -64,7 +64,7 @@ static const geometry_msgs::msg::Pose energy_unit_2_pose = []() {
     geometry_msgs::msg::Pose p;
     p.position.x = 0.3;
     p.position.y = 0.0;
-    p.position.z = 0.39375;
+    p.position.z = 0.525;
     p.orientation.x = q.x();
     p.orientation.y = q.y();
     p.orientation.z = q.z();
@@ -167,9 +167,9 @@ static const geometry_msgs::msg::Pose save_pose = [](){
     q.normalize();
     
     geometry_msgs::msg::Pose p;
-    p.position.x = 0.31033;
-    p.position.y = -0.23614;
-    p.position.z = 0.13404;
+    p.position.x = 0.3;
+    p.position.y = 0.0;
+    p.position.z = 0.525;
     p.orientation.x = q.x();
     p.orientation.y = q.y();
     p.orientation.z = q.z();
@@ -760,7 +760,7 @@ private:
         write_trajectory(plan.trajectory.joint_trajectory);
     }
     
-    void plan_incremental_motion(const std::vector<double>& direction, double step_size = 0.15) {
+    void plan_incremental_motion(const std::vector<double>& direction, double step_size = 0.05) {
         
         mg_->setStartStateToCurrentState();
         
