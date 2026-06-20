@@ -387,6 +387,7 @@ public:
                 // 记录末端位置
                 up_end = {tf.translation().x(), tf.translation().y(), tf.translation().z()};
                 
+                """
                 // 计算up_vector = up_end - up_start
                 up_vector[0] = up_end[0] - up_start[0];
                 up_vector[1] = up_end[1] - up_start[1];
@@ -396,6 +397,10 @@ public:
                 p_vector[0] = q_vector[1] * up_vector[2] - q_vector[2] * up_vector[1];  
                 p_vector[1] = q_vector[2] * up_vector[0] - q_vector[0] * up_vector[2];  
                 p_vector[2] = q_vector[0] * up_vector[1] - q_vector[1] * up_vector[0];
+                """
+                q_vector = {1, 0, 0}; 
+                up_vector = {0, 1, 0};
+                p_vector = {0, 0, 1};
 
 
                 plan_turn();

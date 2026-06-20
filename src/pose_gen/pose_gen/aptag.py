@@ -57,40 +57,64 @@ class AptagNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error converting image: {e}")
 
-    def publish_corners(self, corners, plane_center):
+    def order_corners_lb_rb_rt_lt(self, corners, center):
+        """Order four corners as [lb, rb, rt, lt] using image-space center."""
+        if len(corners) != 4:
+            return None
+
+        lb = rb = rt = lt = None
+        for corner in corners:
+            if corner[0] <= center[0] and corner[1] <= center[1]:
+                lb = corner
+            elif corner[0] >= center[0] and corner[1] <= center[1]:
+                rb = corner
+            elif corner[0] >= center[0] and corner[1] >= center[1]:
+                rt = corner
+            elif corner[0] <= center[0] and corner[1] >= center[1]:
+                lt = corner
+
+        if lb is None or rb is None or rt is None or lt is None:
+            return None
+        return np.array([lb, rb, rt, lt], dtype=np.float32)
+
+    def compute_plane_from_corners(self, corners_3d):
+        """Compute plane center, two diagonals, and unit normal from 4 corners."""
+        if corners_3d is None or np.shape(corners_3d) != (4, 3):
+            return None
+
+        center_3d = np.mean(corners_3d, axis=0)
+        diagonal_1 = corners_3d[2] - corners_3d[0]
+        diagonal_2 = corners_3d[3] - corners_3d[1]
+
+        normal = np.cross(diagonal_1, diagonal_2)
+        norm_val = np.linalg.norm(normal)
+        if norm_val < 1e-8:
+            normal = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        else:
+            normal = normal / norm_val
+            if normal[2] < 0:
+                normal = -normal
+
+        return {
+            'center_3d': center_3d,
+            'diagonal_1': diagonal_1,
+            'diagonal_2': diagonal_2,
+            'normal': normal,
+        }
+
+    def publish_corners(self, corners_3d):
         """
         Publish the detected corners as a JSON string.
         
         Args:
-            corners: List of corners detected by the AprilTag detector.
+            corners_3d: Four 3D corners in [lb, rb, rt, lt] order.
         """
-        # Ensure corners are published in order of [lb, rb, rt, lt]
-        ordered_corners = None
-        lb = rb = rt = lt = None
-        if len(corners) == 4:
-            # if higher and lefter than the center, then lt
-            # if higher and righter than the center, then rt
-            # if just on top of the center, then lt
-            for corner in corners:
-                if corner[0] <= plane_center[0] and corner[1] <= plane_center[1]:
-                    lb = corner
-                elif corner[0] >= plane_center[0] and corner[1] <= plane_center[1]:
-                    rb = corner
-                elif corner[0] >= plane_center[0] and corner[1] >= plane_center[1]:
-                    rt = corner
-                elif corner[0] <= plane_center[0] and corner[1] >= plane_center[1]:
-                    lt = corner
-            if lb is None or rb is None or rt is None or lt is None:
-                self.get_logger().warn("Not all corners detected, cannot publish.")
-                self.get_logger().warn(f'lb: {lb}, rb: {rb}, rt: {rt}, lt: {lt}')
-                return
-            ordered_corners = np.array([lb, rb, rt, lt])
-        else:
-            self.get_logger().warn(f"Unexpected number of corners: {len(corners)}")
+        if corners_3d is None or np.shape(corners_3d) != (4, 3):
+            self.get_logger().warn(f"Invalid corners for publishing: shape={np.shape(corners_3d)}")
             return
 
-        self.get_logger().info(f"Publishing corners: {ordered_corners}")
-        corners_json = json.dumps(ordered_corners.tolist())
+        self.get_logger().info(f"Publishing 3D corners: {corners_3d}")
+        corners_json = json.dumps(np.asarray(corners_3d, dtype=np.float32).tolist())
         self.get_logger().info(f"Corners JSON: {corners_json}")
         self.corner_pub.publish(String(data=corners_json))
 
@@ -111,7 +135,6 @@ class AptagNode(Node):
             print(f"Detected {len(result)} AprilTags:")
             
             # First pass: collect all 2D data
-            all_corners_2d_flat = []
             for i, tag in enumerate(result):
                 # Support both legacy dict output and Detection object output.
                 if isinstance(tag, dict):
@@ -131,10 +154,6 @@ class AptagNode(Node):
                 all_corners.append(corners)
                 all_centers.append(center)
                 all_margins.append(margin)
-                
-                # Flatten corners for depth estimation
-                for corner in corners:
-                    all_corners_2d_flat.append(corner)
 
                 print(f"Tag {i+1}:")
                 print(f"  ID: {tag_id}")
@@ -143,12 +162,22 @@ class AptagNode(Node):
                 print(f"  Margin: {margin:.2f}")
                 print(f"  Corners: {corners}")
             
-            # Estimate depth using coplanar constraint
-            if len(all_corners_2d_flat) >= 8:  # Use advanced method with 2+ tags
-                estimated_depth = self.estimate_plane_depth_advanced(all_corners_2d_flat, self.tag_size)
-            else:
-                estimated_depth = self.estimate_plane_depth(all_corners_2d_flat, self.tag_size)
-            print(f"Estimated depth of coplanar surface: {estimated_depth:.3f}m")
+            # Single-tag workflow: use the first (and expected only) tag.
+            if len(result) > 1:
+                self.get_logger().warn(
+                    f"Detected {len(result)} tags while single-tag mode is expected; using the first tag."
+                )
+            selected_idx = 0
+            selected_id = all_ids[selected_idx]
+            selected_center_2d = all_centers[selected_idx]
+            selected_corners_2d = self.order_corners_lb_rb_rt_lt(all_corners[selected_idx], selected_center_2d)
+            if selected_corners_2d is None:
+                self.get_logger().warn("Failed to order the 4 selected-tag corners")
+                return None
+
+            # Use only one tag's corners to estimate depth.
+            estimated_depth = self.estimate_plane_depth(selected_corners_2d, self.tag_size)
+            print(f"Estimated depth from selected tag {selected_id}: {estimated_depth:.3f}m")
             
             # Second pass: calculate 3D points with estimated depth
             for i, (center, corners) in enumerate(zip(all_centers, all_corners)):
@@ -164,8 +193,17 @@ class AptagNode(Node):
                 print(f"  Center 3D: ({ctr_pt_3d[0]:.3f}, {ctr_pt_3d[1]:.3f}, {ctr_pt_3d[2]:.3f})")
                 print(f"  Corners 3D: {[f'({c[0]:.3f}, {c[1]:.3f}, {c[2]:.3f})' for c in corners_3d]}")
                 
-            plane_center = self.get_center(all_centers)
-            plane_center_3d = self.get_3d_point(plane_center, estimated_depth)
+            selected_corners_3d = np.array(
+                self.get_corners_3d_with_depth(selected_corners_2d, estimated_depth),
+                dtype=np.float32,
+            )
+            plane_info = self.compute_plane_from_corners(selected_corners_3d)
+            if plane_info is None:
+                self.get_logger().warn("Failed to compute plane from selected tag corners")
+                return None
+
+            plane_center = selected_center_2d
+            plane_center_3d = plane_info['center_3d']
         else:
             # self.get_logger().info("No tags detected")
             return None
@@ -178,10 +216,16 @@ class AptagNode(Node):
             'corners': all_corners,
             'centers': all_centers,
             'margins': all_margins,
+            'selected_idx': selected_idx,
+            'selected_id': selected_id,
             'ctr_3d_points': all_ctr_3d_pts,
             'corners_3d': all_corners_3d,
+            'plane_corners_3d': selected_corners_3d,
             'plane_center': plane_center,
             'plane_center_3d': plane_center_3d,
+            'plane_normal': plane_info['normal'],
+            'plane_diagonal_1': plane_info['diagonal_1'],
+            'plane_diagonal_2': plane_info['diagonal_2'],
             'estimated_depth': estimated_depth,
         }
         return return_info
@@ -385,6 +429,8 @@ class AptagNode(Node):
         all_ctr_3d_pts = aptag_info['ctr_3d_points']
         all_corners_3d = aptag_info.get('corners_3d', [])
 
+        selected_idx = aptag_info.get('selected_idx', -1)
+
         # Basic corners and center
         for i, (tag_id, corners, center, margin, ctr_3d) in enumerate(zip(all_ids, all_corners, all_centers, all_margins, all_ctr_3d_pts)):
             print(f"Visualizing Tag {tag_id}: Center {center}, Margin {margin}")
@@ -414,6 +460,11 @@ class AptagNode(Node):
             cv2.putText(display_image, f"Tag {tag_id}", 
                         (center_int[0] - 20, center_int[1] - 20), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+            if i == selected_idx:
+                cv2.putText(display_image, "SELECTED", 
+                            (center_int[0] - 35, center_int[1] - 40), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
             
             # Draw margin and depth info
             cv2.putText(display_image, f"M: {margin:.1f}", 
@@ -489,14 +540,14 @@ class AptagNode(Node):
 
             # TODO: test tf, get orthogonal matrix, and finally the hover pose that can enter the plane
             if aptag_info is not None:
-                self.publish_corners(aptag_info['ctr_3d_points'], aptag_info['plane_center_3d'])
+                self.publish_corners(aptag_info['plane_corners_3d'])
             cv2.imshow("[ Aptag ] AprilTag Detection", display_image)
             cv2.waitKey(1)
 
 
 def main(args=None):
     rclpy.init(args=args)
-    tag_size = 0.016 # 16mm tag size
+    tag_size = 0.09 # 90mm tag size (originally 16mm)
     node = AptagNode(tag_size=tag_size)
     try:
         node.run()

@@ -370,42 +370,42 @@ class Transform(Node):
         clear_marker.header.stamp = current_time
         clear_marker.action = Marker.DELETEALL
         marker_array.markers.append(clear_marker)
-        
         # 1. Visualize corners as spheres
-        for i, corner in enumerate(corners):
-            marker = Marker()
-            marker.header.frame_id = 'map'
-            marker.header.stamp = current_time
-            marker.ns = 'corners'
-            marker.id = i
-            marker.type = Marker.SPHERE
-            marker.action = Marker.ADD
-            
-            # Position
-            marker.pose.position.x = float(corner[0])
-            marker.pose.position.y = float(corner[1])
-            marker.pose.position.z = float(corner[2])
-            marker.pose.orientation.w = 1.0
-            
-            # Scale
-            marker.scale.x = 0.02
-            marker.scale.y = 0.02
-            marker.scale.z = 0.02
-            
-            # Color (different colors for each corner)
-            colors = [
-                [1.0, 0.0, 0.0],  # Red
-                [0.0, 1.0, 0.0],  # Green
-                [0.0, 0.0, 1.0],  # Blue
-                [1.0, 1.0, 0.0]   # Yellow
-            ]
-            marker.color.r = colors[i][0]
-            marker.color.g = colors[i][1]
-            marker.color.b = colors[i][2]
-            marker.color.a = 1.0
-            
-            marker_array.markers.append(marker)
-        
+        show_corner_markers = True
+        if show_corner_markers:
+            for i, corner in enumerate(corners):
+                marker = Marker()
+                marker.header.frame_id = 'map'
+                marker.header.stamp = current_time
+                marker.ns = 'corners'
+                marker.id = i
+                marker.type = Marker.SPHERE
+                marker.action = Marker.ADD
+                
+                # Position
+                marker.pose.position.x = float(corner[0])
+                marker.pose.position.y = float(corner[1])
+                marker.pose.position.z = float(corner[2])
+                marker.pose.orientation.w = 1.0
+                
+                # Scale
+                marker.scale.x = 0.02
+                marker.scale.y = 0.02
+                marker.scale.z = 0.02
+                
+                # Color (different colors for each corner)
+                colors = [
+                    [1.0, 0.0, 0.0],  # Red
+                    [0.0, 1.0, 0.0],  # Green
+                    [0.0, 0.0, 1.0],  # Blue
+                    [1.0, 1.0, 0.0]   # Yellow
+                ]
+                marker.color.r = colors[i][0]
+                marker.color.g = colors[i][1]
+                marker.color.b = colors[i][2]
+                marker.color.a = 1.0
+                
+                marker_array.markers.append(marker)
         # 2. Visualize plane center as a larger sphere
         center_marker = Marker()
         center_marker.header.frame_id = 'map'
@@ -478,6 +478,7 @@ class Transform(Node):
         plane_marker.id = 0
         plane_marker.type = Marker.TRIANGLE_LIST
         plane_marker.action = Marker.ADD
+        plane_marker.pose.orientation.w = 1.0
         
         # Create triangles to represent the plane (two triangles make a rectangle)
         # Triangle 1: corners[0], corners[1], corners[2]
@@ -495,6 +496,21 @@ class Transform(Node):
             point.y = float(corners[i][1])
             point.z = float(corners[i][2])
             plane_marker.points.append(point)
+
+        # Add reverse winding so the surface is visible from both sides.
+        for i in [2, 1, 0]:
+            point = Point()
+            point.x = float(corners[i][0])
+            point.y = float(corners[i][1])
+            point.z = float(corners[i][2])
+            plane_marker.points.append(point)
+
+        for i in [3, 2, 0]:
+            point = Point()
+            point.x = float(corners[i][0])
+            point.y = float(corners[i][1])
+            point.z = float(corners[i][2])
+            plane_marker.points.append(point)
         
         plane_marker.scale.x = 1.0
         plane_marker.scale.y = 1.0
@@ -503,9 +519,12 @@ class Transform(Node):
         plane_marker.color.r = 0.5
         plane_marker.color.g = 0.5
         plane_marker.color.b = 1.0  # Light blue
-        plane_marker.color.a = 0.3   # Semi-transparent
+        plane_marker.color.a = 0.8   # Semi-transparent
         
         marker_array.markers.append(plane_marker)
+
+        self.get_logger().info(f"visualizing plane with corners: {corners}")
+        
         
         # 5. Visualize hover pose if provided
         if hover_pose is not None:
@@ -588,12 +607,14 @@ class Transform(Node):
             corners = self.karman_filter_e(corners)
             # Get the plane
             plane_info = self.get_plane(corners)
+            if plane_info is None:
+                continue
             # Get the hover pose
             hover_pose = self.get_hover_pose(plane_info)
+            # Always publish plane/corner visualization if plane is valid.
+            self.visualize_debug(corners, plane_info, hover_pose)
             if hover_pose is not None:
                 self.publish_hover_pose(hover_pose)
-                # Visualize debug information
-                self.visualize_debug(corners, plane_info, hover_pose)
         self.get_logger().info("Transform node is shutting down.")
 
 def main(args=None):

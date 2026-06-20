@@ -197,7 +197,13 @@ source ~/robo_arm/install/setup.bash
 rviz2
 
 
-usually, use this order: source /opt/ros/jazzy/setup.bash; source /home/hku/ws_moveit/install/setup.bash; source ~/robo_arm/install/setup.bash (to prevent using ws_moveit2)
+usually, use this order: source /opt/ros/jazzy/setup.bash; source /home/hku/ws_moveit/install/setup.bash; source ~/robo_arm/install/setup.bash (to prevent using ws_moveit2)(have to be used in a newly opened terminal)
+
+**June 20**
+- testing mode R and discover a problem that the arm is not moving at all
+- todo: draw the marker array of arrows of three directions
+- modified  case ControlMode::Turn
+- 如果要用L515，需要用老版本驱动，不能用ros jazzy里面带的，所以执行命令的时候要写全路径，例如/usr/local/bin/rs-enumerate-devices
 
 ### 路径配置
 如果工作目录不在 `/home/hku/robo_arm`，需要更新 `plan/CMakeLists.txt` 中的绝对路径
