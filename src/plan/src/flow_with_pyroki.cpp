@@ -18,6 +18,8 @@
 #include <rclcpp/clock.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/string.hpp>
+#include <visualization_msgs/msg/marker.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <moveit_visual_tools/moveit_visual_tools.h>
 #include <moveit/kinematic_constraints/utils.hpp>
@@ -306,6 +308,7 @@ public:
     using JMGPtr = const moveit::core::JointModelGroup*;
     using VTPtr = std::shared_ptr<moveit_visual_tools::MoveItVisualTools>;
     using JointStatePublisherPtr = rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr;
+    using MarkerArrayPublisherPtr = rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr;
     
     ControlMode mode_;
     MoveGroupPtr mg_;
@@ -313,9 +316,10 @@ public:
     VTPtr vt_;
     rclcpp::Node::SharedPtr node_;
     JointStatePublisherPtr js_pub_;
+    MarkerArrayPublisherPtr marker_pub_;
     
-    ControlStateMachine(rclcpp::Node::SharedPtr node, MoveGroupPtr mg, JMGPtr jmg, VTPtr vt, JointStatePublisherPtr js_pub)
-        : mode_(ControlMode::Following), mg_(mg), jmg_(jmg), vt_(vt), node_(node), js_pub_(js_pub) {}
+    ControlStateMachine(rclcpp::Node::SharedPtr node, MoveGroupPtr mg, JMGPtr jmg, VTPtr vt, JointStatePublisherPtr js_pub, MarkerArrayPublisherPtr marker_pub)
+        : mode_(ControlMode::Following), mg_(mg), jmg_(jmg), vt_(vt), node_(node), js_pub_(js_pub), marker_pub_(marker_pub) {}
     
     void start() {
         RCLCPP_INFO(LOGGER, "Started");
@@ -387,7 +391,7 @@ public:
                 // 记录末端位置
                 up_end = {tf.translation().x(), tf.translation().y(), tf.translation().z()};
                 
-                """
+                /*
                 // 计算up_vector = up_end - up_start
                 up_vector[0] = up_end[0] - up_start[0];
                 up_vector[1] = up_end[1] - up_start[1];
@@ -397,12 +401,14 @@ public:
                 p_vector[0] = q_vector[1] * up_vector[2] - q_vector[2] * up_vector[1];  
                 p_vector[1] = q_vector[2] * up_vector[0] - q_vector[0] * up_vector[2];  
                 p_vector[2] = q_vector[0] * up_vector[1] - q_vector[1] * up_vector[0];
-                """
-                q_vector = {1, 0, 0}; 
+                */
+                // center = start - q * radius
+                // q=-X -> center is on +X; rotating +90deg around +Y moves end toward +X and +Z.
+                q_vector = {-1, 0, 0};
                 up_vector = {0, 1, 0};
-                p_vector = {0, 0, 1};
+                p_vector = {0, 1, 0};
 
-
+                publish_turn_vectors(up_end);
                 plan_turn();
                 break;
             }
@@ -540,6 +546,8 @@ private:
             target_pose.orientation.w = target_quat.w();
             waypoints.push_back(target_pose);
         }
+
+        publish_turn_waypoints(waypoints);
         
         // 计算笛卡尔路径
         moveit_msgs::msg::RobotTrajectory trajectory;
@@ -589,6 +597,210 @@ private:
     }
 
 private:
+    void publish_turn_vectors(const std::vector<double>& origin) {
+        if (!marker_pub_ || origin.size() < 3) {
+            return;
+        }
+
+        auto make_arrow = [this, &origin](
+            int id,
+            const std::vector<double>& direction,
+            float r,
+            float g,
+            float b,
+            double length,
+            const std::string& label)
+        {
+            visualization_msgs::msg::Marker marker;
+            marker.header.frame_id = "base_link";
+            marker.header.stamp = node_->now();
+            marker.ns = "turn_vectors";
+            marker.id = id;
+            marker.type = visualization_msgs::msg::Marker::ARROW;
+            marker.action = visualization_msgs::msg::Marker::ADD;
+
+            marker.scale.x = 0.01;
+            marker.scale.y = 0.02;
+            marker.scale.z = 0.02;
+
+            marker.color.r = r;
+            marker.color.g = g;
+            marker.color.b = b;
+            marker.color.a = 0.95f;
+
+            marker.lifetime = rclcpp::Duration::from_seconds(0.0);
+            marker.frame_locked = true;
+            marker.text = label;
+
+            if (direction.size() < 3) {
+                marker.action = visualization_msgs::msg::Marker::DELETE;
+                return marker;
+            }
+
+            geometry_msgs::msg::Point start;
+            start.x = origin[0];
+            start.y = origin[1];
+            start.z = origin[2];
+
+            Eigen::Vector3d dir(direction[0], direction[1], direction[2]);
+            if (dir.norm() < 1e-8) {
+                marker.action = visualization_msgs::msg::Marker::DELETE;
+                return marker;
+            }
+            dir.normalize();
+            dir *= length;
+
+            geometry_msgs::msg::Point end;
+            end.x = start.x + dir.x();
+            end.y = start.y + dir.y();
+            end.z = start.z + dir.z();
+
+            marker.points.push_back(start);
+            marker.points.push_back(end);
+            return marker;
+        };
+
+        visualization_msgs::msg::MarkerArray marker_array;
+        marker_array.markers.reserve(3);
+        marker_array.markers.push_back(make_arrow(0, up_vector, 1.0f, 0.2f, 0.2f, 0.12, "up"));
+        marker_array.markers.push_back(make_arrow(1, p_vector, 0.2f, 1.0f, 0.2f, 0.12, "p"));
+        marker_array.markers.push_back(make_arrow(2, q_vector, 0.2f, 0.2f, 1.0f, 0.12, "q"));
+
+        marker_pub_->publish(marker_array);
+    }
+
+    void publish_turn_waypoints(const std::vector<geometry_msgs::msg::Pose>& waypoints) {
+        if (!marker_pub_ || waypoints.empty()) {
+            return;
+        }
+
+        visualization_msgs::msg::Marker points_marker;
+        points_marker.header.frame_id = "base_link";
+        points_marker.header.stamp = node_->now();
+        points_marker.ns = "turn_waypoints";
+        points_marker.id = 10;
+        points_marker.type = visualization_msgs::msg::Marker::SPHERE_LIST;
+        points_marker.action = visualization_msgs::msg::Marker::ADD;
+        points_marker.scale.x = 0.008;
+        points_marker.scale.y = 0.008;
+        points_marker.scale.z = 0.008;
+        points_marker.color.r = 1.0f;
+        points_marker.color.g = 0.9f;
+        points_marker.color.b = 0.2f;
+        points_marker.color.a = 0.95f;
+        points_marker.lifetime = rclcpp::Duration::from_seconds(0.0);
+        points_marker.frame_locked = true;
+
+        visualization_msgs::msg::Marker line_marker;
+        line_marker.header = points_marker.header;
+        line_marker.ns = "turn_waypoints";
+        line_marker.id = 11;
+        line_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+        line_marker.action = visualization_msgs::msg::Marker::ADD;
+        line_marker.scale.x = 0.003;
+        line_marker.color.r = 1.0f;
+        line_marker.color.g = 0.5f;
+        line_marker.color.b = 0.0f;
+        line_marker.color.a = 0.9f;
+        line_marker.lifetime = rclcpp::Duration::from_seconds(0.0);
+        line_marker.frame_locked = true;
+
+        visualization_msgs::msg::Marker x_axis_marker;
+        x_axis_marker.header = points_marker.header;
+        x_axis_marker.ns = "turn_waypoints";
+        x_axis_marker.id = 12;
+        x_axis_marker.type = visualization_msgs::msg::Marker::LINE_LIST;
+        x_axis_marker.action = visualization_msgs::msg::Marker::ADD;
+        x_axis_marker.scale.x = 0.002;
+        x_axis_marker.color.r = 1.0f;
+        x_axis_marker.color.g = 0.2f;
+        x_axis_marker.color.b = 0.2f;
+        x_axis_marker.color.a = 0.95f;
+        x_axis_marker.lifetime = rclcpp::Duration::from_seconds(0.0);
+        x_axis_marker.frame_locked = true;
+
+        visualization_msgs::msg::Marker y_axis_marker;
+        y_axis_marker.header = points_marker.header;
+        y_axis_marker.ns = "turn_waypoints";
+        y_axis_marker.id = 13;
+        y_axis_marker.type = visualization_msgs::msg::Marker::LINE_LIST;
+        y_axis_marker.action = visualization_msgs::msg::Marker::ADD;
+        y_axis_marker.scale.x = 0.002;
+        y_axis_marker.color.r = 0.2f;
+        y_axis_marker.color.g = 1.0f;
+        y_axis_marker.color.b = 0.2f;
+        y_axis_marker.color.a = 0.95f;
+        y_axis_marker.lifetime = rclcpp::Duration::from_seconds(0.0);
+        y_axis_marker.frame_locked = true;
+
+        visualization_msgs::msg::Marker z_axis_marker;
+        z_axis_marker.header = points_marker.header;
+        z_axis_marker.ns = "turn_waypoints";
+        z_axis_marker.id = 14;
+        z_axis_marker.type = visualization_msgs::msg::Marker::LINE_LIST;
+        z_axis_marker.action = visualization_msgs::msg::Marker::ADD;
+        z_axis_marker.scale.x = 0.002;
+        z_axis_marker.color.r = 0.2f;
+        z_axis_marker.color.g = 0.2f;
+        z_axis_marker.color.b = 1.0f;
+        z_axis_marker.color.a = 0.95f;
+        z_axis_marker.lifetime = rclcpp::Duration::from_seconds(0.0);
+        z_axis_marker.frame_locked = true;
+
+        const double axis_length = 0.02;
+
+        points_marker.points.reserve(waypoints.size());
+        line_marker.points.reserve(waypoints.size());
+        x_axis_marker.points.reserve(waypoints.size() * 2);
+        y_axis_marker.points.reserve(waypoints.size() * 2);
+        z_axis_marker.points.reserve(waypoints.size() * 2);
+        for (const auto& pose : waypoints) {
+            geometry_msgs::msg::Point p;
+            p.x = pose.position.x;
+            p.y = pose.position.y;
+            p.z = pose.position.z;
+            points_marker.points.push_back(p);
+            line_marker.points.push_back(p);
+
+            Eigen::Quaterniond q(
+                pose.orientation.w,
+                pose.orientation.x,
+                pose.orientation.y,
+                pose.orientation.z);
+            q.normalize();
+            const Eigen::Matrix3d rot = q.toRotationMatrix();
+
+            geometry_msgs::msg::Point x_end;
+            x_end.x = p.x + axis_length * rot(0, 0);
+            x_end.y = p.y + axis_length * rot(1, 0);
+            x_end.z = p.z + axis_length * rot(2, 0);
+            x_axis_marker.points.push_back(p);
+            x_axis_marker.points.push_back(x_end);
+
+            geometry_msgs::msg::Point y_end;
+            y_end.x = p.x + axis_length * rot(0, 1);
+            y_end.y = p.y + axis_length * rot(1, 1);
+            y_end.z = p.z + axis_length * rot(2, 1);
+            y_axis_marker.points.push_back(p);
+            y_axis_marker.points.push_back(y_end);
+
+            geometry_msgs::msg::Point z_end;
+            z_end.x = p.x + axis_length * rot(0, 2);
+            z_end.y = p.y + axis_length * rot(1, 2);
+            z_end.z = p.z + axis_length * rot(2, 2);
+            z_axis_marker.points.push_back(p);
+            z_axis_marker.points.push_back(z_end);
+        }
+
+        visualization_msgs::msg::MarkerArray marker_array;
+        marker_array.markers.push_back(points_marker);
+        marker_array.markers.push_back(line_marker);
+        marker_array.markers.push_back(x_axis_marker);
+        marker_array.markers.push_back(y_axis_marker);
+        marker_array.markers.push_back(z_axis_marker);
+        marker_pub_->publish(marker_array);
+    }
+
     void plan_to_save_pose() {
         RCLCPP_INFO(LOGGER, "Planning to save_pose");
         
@@ -965,6 +1177,7 @@ int main(int argc, char** argv)
     auto control_cb_group = node->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
     auto js_pub = node->create_publisher<sensor_msgs::msg::JointState>("/joint_states", 10);
+    auto marker_pub = node->create_publisher<visualization_msgs::msg::MarkerArray>("/turn_vectors", 10);
 
     rclcpp::SubscriptionOptions ctrl_sub_opts;
     ctrl_sub_opts.callback_group = io_cb_group;
@@ -1018,7 +1231,7 @@ int main(int argc, char** argv)
     
     
     // 初始化状态机
-    g_state_machine = std::make_unique<ControlStateMachine>(node, mg, jmg, vt, js_pub);
+    g_state_machine = std::make_unique<ControlStateMachine>(node, mg, jmg, vt, js_pub, marker_pub);
     g_state_machine->start();
     
     RCLCPP_INFO(LOGGER, "Ready. Keys: G(Following) W/S/A/D/E/Q(Base) I/K(EE) R(UpRestrain) T(Turn) 1-6(Energy) X(Quit)");

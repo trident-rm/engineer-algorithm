@@ -205,6 +205,8 @@ usually, use this order: source /opt/ros/jazzy/setup.bash; source /home/hku/ws_m
 - modified  case ControlMode::Turn
 - 如果要用L515，需要用老版本驱动，不能用ros jazzy里面带的，所以执行命令的时候要写全路径，例如/usr/local/bin/rs-enumerate-devices
 
+**June 21**
+- 添加了Turn模式下的坐标轴和轨迹可视化
 ### 路径配置
 如果工作目录不在 `/home/hku/robo_arm`，需要更新 `plan/CMakeLists.txt` 中的绝对路径
 

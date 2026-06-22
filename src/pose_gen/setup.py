@@ -35,6 +35,7 @@ setup(
             'aptag_node=pose_gen.aptag:main',
             'corner_node=pose_gen.corner:main',
             'tf_node=pose_gen.tf:main',
+            'marker_reco_node=pose_gen.marker_reco:main',
         ],
     },
 )
