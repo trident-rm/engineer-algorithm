@@ -200,7 +200,8 @@ static std::vector<double> ee_positive = {0, 0, 0}; //末端link当前z轴的方
 static std::vector<double> up_start = {0.0,0.0,0.0}; //upRestrain刚开始的时候末端位置
 static std::vector<double> up_end = {0.0,0.0,0.0}; //upRestrain结束时末端位置
 
-
+//hover_pose (来自marker_reco发布的plane和normal_direction)
+static geometry_msgs::msg::Pose hover_pose;
 
 // 键盘输入缓存
 static std::mutex g_key_mutex;
@@ -444,6 +445,11 @@ public:
     }
     
 private:
+
+    geometry::msg::Pose calculate_hover_pose(){
+
+
+    }
     
     void enter_following() {
         std::vector<double> target_joints;

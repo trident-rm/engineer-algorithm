@@ -207,6 +207,13 @@ usually, use this order: source /opt/ros/jazzy/setup.bash; source /home/hku/ws_m
 
 **June 21**
 - 添加了Turn模式下的坐标轴和轨迹可视化
+- 在pose gen package 下添加了marker_reco节点
+
+**June 24**
+- 把mark灯平面和法向量发布并在rviz里可视化（目前是把mark灯的平面和法向量放在base_link之下去显示，camera frame到base_link的frame的转换目前是单位矩阵）
+- 在flow_with_pyroki里添加了一个全局变量 hover pose，计算规划最开始的时候，机械臂该去到什么地方
+
+
 ### 路径配置
 如果工作目录不在 `/home/hku/robo_arm`，需要更新 `plan/CMakeLists.txt` 中的绝对路径
 
