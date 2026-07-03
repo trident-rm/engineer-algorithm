@@ -24,6 +24,7 @@
   <depend>moveit_msgs</depend>
   <depend>trajectory_msgs</depend>
   <depend>serial</depend>
+  <exec_depend>moveit_configs_utils</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
@@ -32,5 +33,3 @@
     <build_type>ament_cmake</build_type>
   </export>
 </package>
-
-

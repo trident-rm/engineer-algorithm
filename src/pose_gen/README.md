@@ -27,3 +27,5 @@ python3 -m pose_gen.aptag
 
 
 P-axis就对应规则里面的方向，V-axis对应marker灯竖轴的方向，normal direction就是marker灯的法向量
+
+

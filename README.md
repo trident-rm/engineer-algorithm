@@ -59,6 +59,10 @@ ros2 launch plan flow_with_pyroki.launch.py
 
 # 终端4: 启动键盘输入
 ros2 run plan keyboard_input
+
+#终端5: 启动视觉节点
+ros2 run pose_gen marker_reco_node
+
 ```
 
 **控制按键：**
@@ -213,6 +217,16 @@ usually, use this order: source /opt/ros/jazzy/setup.bash; source /home/hku/ws_m
 - 把mark灯平面和法向量发布并在rviz里可视化（目前是把mark灯的平面和法向量放在base_link之下去显示，camera frame到base_link的frame的转换目前是单位矩阵）
 - 在flow_with_pyroki里添加了一个全局变量 hover pose，计算规划最开始的时候，机械臂该去到什么地方
 
+**June 27**
+- 解决failed to cal plane问题（因为marker_reco没有把计算完的centerpoint发布）
+- 修改plan_turn_p和plan_turn_q,并把半圆轨迹点可视化
+- 改相机坐标系的外参（后续需要把camera的link也在urdf里添加，根据机械臂位姿动态计算）
+- 把flow_with_pyroki中所有规划相关的函数都改成了返回bool
+
+**June 28**
+- 修改了相机坐标系的外参（刚知道相机坐标系是倒着的）
+- 删除python虚拟环境（因为之前用的也是系统环境，所以把workspace里的.venv删了）
+- 把get_energy_unit里的setJointValueTarget改成了setPoseTarget.
 
 ### 路径配置
 如果工作目录不在 `/home/hku/robo_arm`，需要更新 `plan/CMakeLists.txt` 中的绝对路径
@@ -233,3 +247,15 @@ x方向需要加上臂base到轮子最前面的距离
 y方向不用调
 
 ## How to run package pose_gen
+[flow_with_pyroki-3] [WARN] [1782641080.029224637] [flow_with_pyroki]: calculate_plane: only received 0 complete marker_reco frames within timeout
+[flow_with_pyroki-3] [WARN] [1782641080.029414100] [flow_with_pyroki]: Plane calculation failed. Save flow stopped.
+
+ate_monitor]: Didn't receive robot state (joint angles) with recent timestamp within 5.000000 seconds. Requested time 1782643101.521065, but latest received state has time 1782643101.515767.
+[flow_with_pyroki-3] Check clock synchronization if your are running ROS across multiple machines!
+[flow_with_pyroki-3] [ERROR] [1782643106.521547969] [flow_with_pyroki.moveit.ros.move_group_interface]: Failed to fetch current robot state
+
+p_interface]: Planning request aborted
+[flow_with_pyroki-3] [ERROR] [1782643569.913069261] [flow_with_pyroki.moveit.ros.move_group_interface]: MoveGroupInterface::plan() failed or timeout reached
+[flow_with_pyroki-3] [WARN] [1782643569.913215238] [flow_with_pyroki]: Planning to energy_unit_0 failed (code=99999, error='FAILURE', message='', source='')
+[flow_with_pyroki-3] [WARN] [1782643569.913275887] [flow_with_pyroki]: Hover execution failed. Save flow stopped.
+[flow_with_pyroki-3] [INFO] [17

@@ -12,6 +12,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/cfgs', glob('cfgs/*')),
+        ('share/' + package_name + '/weights', glob('weights/*')),
     ],
     install_requires=[
         'setuptools',
