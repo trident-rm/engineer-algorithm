@@ -24,6 +24,7 @@
   <depend>moveit_msgs</depend>
   <depend>trajectory_msgs</depend>
   <depend>serial</depend>
+  <depend>robo_arm_msgs</depend>
   <exec_depend>moveit_configs_utils</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>

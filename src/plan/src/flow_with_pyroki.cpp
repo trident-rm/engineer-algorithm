@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <fstream>
 #include <functional>
@@ -15,11 +16,7 @@
 #include <string>
 #include <thread>
 #include <vector>
-
-#include <geometry_msgs/msg/polygon_stamped.hpp>
-#include <geometry_msgs/msg/point_stamped.hpp>
 #include <geometry_msgs/msg/pose.hpp>
-#include <geometry_msgs/msg/vector3_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/clock.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
@@ -29,6 +26,7 @@
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <moveit_visual_tools/moveit_visual_tools.h>
 #include <moveit/kinematic_constraints/utils.hpp>
+#include <robo_arm_msgs/msg/plane_frame.hpp>
 
 
 //全局常量
@@ -216,6 +214,7 @@ static char g_last_key = 0;
 static std::atomic<bool> g_got_pyroki_state(false);
 
 enum class ControlMode {
+    Idle,       // 全局空闲态：不执行任何动作
     Following,  // G: 绝对跟随pyroki（跟随控制器）
     RelativeF,  // H: 相对跟随控制器
     UpIncre,    // W: base frame Z增量模式
@@ -245,7 +244,6 @@ enum class SaveSubState {
     Slide,
     Turn_P,
     Turn_Q,
-    IDLE,
 };
 
 /**
@@ -334,41 +332,16 @@ public:
     MarkerArrayPublisherPtr plane_pub_; //平面相关可视化
     
 
-    struct PendingVectorSample {
-        int64_t stamp_ns = -1;
-        Eigen::Vector3d value = Eigen::Vector3d::Zero();
-        bool valid = false;
-    };
-
-    struct PendingPointSample {
-        int64_t stamp_ns = -1;
-        Eigen::Vector3d value = Eigen::Vector3d::Zero();
-        bool valid = false;
-    };
-
-    struct PlaneFrameSample {
-        int64_t stamp_ns = -1;
-        Eigen::Vector3d up_axis = Eigen::Vector3d::Zero();
-        Eigen::Vector3d p_axis = Eigen::Vector3d::Zero();
-        Eigen::Vector3d q_axis = Eigen::Vector3d::Zero();
-        Eigen::Vector3d center = Eigen::Vector3d::Zero();
-        std::vector<geometry_msgs::msg::Point32> corners;
-    };
-
     std::mutex plane_mutex_;
-    std::condition_variable plane_cv_;
-    bool plane_sampling_active_ = false;
-    int64_t plane_sampling_start_ns_ = -1;
-    std::vector<PlaneFrameSample> plane_samples_;
-    PendingVectorSample pending_up_;
-    PendingVectorSample pending_p_;
-    PendingVectorSample pending_q_;
-    PendingPointSample pending_center_;
+    bool has_latest_plane_frame_ = false;
+    robo_arm_msgs::msg::PlaneFrame latest_plane_frame_;
+    robo_arm_msgs::msg::PlaneFrame save_plane_frame_;
+
     
     ControlStateMachine(rclcpp::Node::SharedPtr node, MoveGroupPtr mg, 
         JMGPtr jmg, VTPtr vt, JointStatePublisherPtr js_pub, 
         MarkerArrayPublisherPtr marker_pub, MarkerArrayPublisherPtr plane_pub)
-        : mode_(ControlMode::Following), save_substate_(SaveSubState::IDLE), mg_(mg), jmg_(jmg), vt_(vt), node_(node), js_pub_(js_pub), marker_pub_(marker_pub), plane_pub_(plane_pub) {}
+        : mode_(ControlMode::Following), save_substate_(SaveSubState::CalPlane), mg_(mg), jmg_(jmg), vt_(vt), node_(node), js_pub_(js_pub), marker_pub_(marker_pub), plane_pub_(plane_pub) {}
     
     void start() {
         RCLCPP_INFO(LOGGER, "Started");
@@ -386,6 +359,8 @@ public:
             case ControlMode::Save:
                 save_substate_ = SaveSubState::CalPlane;
                 enter_save();
+                break;
+            case ControlMode::Idle:
                 break;
             case ControlMode::Following:
                 enter_following();
@@ -512,70 +487,56 @@ public:
         }
     }
 
-    void on_marker_up(const geometry_msgs::msg::Vector3Stamped::SharedPtr msg) {
-        handle_marker_vector(msg, pending_up_);
-    }
+    void on_plane_frame(const robo_arm_msgs::msg::PlaneFrame::SharedPtr msg) {
+        Eigen::Vector3d up_axis(msg->up_axis.x, msg->up_axis.y, msg->up_axis.z);
+        Eigen::Vector3d p_axis(msg->p_axis.x, msg->p_axis.y, msg->p_axis.z);
+        Eigen::Vector3d q_axis(msg->q_axis.x, msg->q_axis.y, msg->q_axis.z);
+        Eigen::Vector3d center(msg->center.x, msg->center.y, msg->center.z);
 
-    void on_marker_p(const geometry_msgs::msg::Vector3Stamped::SharedPtr msg) {
-        handle_marker_vector(msg, pending_p_);
-    }
-
-    void on_marker_q(const geometry_msgs::msg::Vector3Stamped::SharedPtr msg) {
-        handle_marker_vector(msg, pending_q_);
-    }
-
-    void on_marker_center(const geometry_msgs::msg::PointStamped::SharedPtr msg) {
-        const int64_t stamp_ns = rclcpp::Time(msg->header.stamp).nanoseconds();
-        std::lock_guard<std::mutex> lk(plane_mutex_);
-        if (!plane_sampling_active_ || stamp_ns < plane_sampling_start_ns_) {
+        if (!normalize_vector(up_axis) || !normalize_vector(p_axis) ||
+            !normalize_vector(q_axis) || !center.allFinite()) {
+            RCLCPP_WARN(LOGGER, "on_plane_frame: received non-finite or degenerate plane frame");
             return;
         }
 
-        pending_center_.stamp_ns = stamp_ns;
-        pending_center_.value = Eigen::Vector3d(msg->point.x, msg->point.y, msg->point.z);
-        pending_center_.valid = pending_center_.value.allFinite();
+        if (msg->corners.empty()) {
+            RCLCPP_WARN(LOGGER, "on_plane_frame: received empty plane corners");
+            return;
+        }
+
+        std::vector<geometry_msgs::msg::Point32> corners;
+        corners.reserve(msg->corners.size());
+        for (const auto& c : msg->corners) {
+            if (!std::isfinite(c.x) || !std::isfinite(c.y) || !std::isfinite(c.z)) {
+                RCLCPP_WARN(LOGGER, "on_plane_frame: received non-finite corner");
+                return;
+            }
+            corners.push_back(c);
+        }
+
+        robo_arm_msgs::msg::PlaneFrame plane_frame;
+        plane_frame.header = msg->header;
+        plane_frame.up_axis.x = up_axis.x();
+        plane_frame.up_axis.y = up_axis.y();
+        plane_frame.up_axis.z = up_axis.z();
+        plane_frame.p_axis.x = p_axis.x();
+        plane_frame.p_axis.y = p_axis.y();
+        plane_frame.p_axis.z = p_axis.z();
+        plane_frame.q_axis.x = q_axis.x();
+        plane_frame.q_axis.y = q_axis.y();
+        plane_frame.q_axis.z = q_axis.z();
+        plane_frame.center.x = center.x();
+        plane_frame.center.y = center.y();
+        plane_frame.center.z = center.z();
+        plane_frame.corners = corners;
+
+        {
+            std::lock_guard<std::mutex> lk(plane_mutex_);
+            latest_plane_frame_ = plane_frame;
+            has_latest_plane_frame_ = true;
+        }
     }
 
-    void on_marker_corners(const geometry_msgs::msg::PolygonStamped::SharedPtr msg) {
-        const int64_t stamp_ns = rclcpp::Time(msg->header.stamp).nanoseconds();
-
-        std::lock_guard<std::mutex> lk(plane_mutex_);
-        if (!plane_sampling_active_) {
-            return;
-        }
-        if (!pending_up_.valid || !pending_p_.valid || !pending_q_.valid || !pending_center_.valid) {
-            return;
-        }
-        if (pending_up_.stamp_ns != stamp_ns ||
-            pending_p_.stamp_ns != stamp_ns ||
-            pending_q_.stamp_ns != stamp_ns ||
-            pending_center_.stamp_ns != stamp_ns) {
-            return;
-        }
-        if (stamp_ns < plane_sampling_start_ns_) {
-            return;
-        }
-
-        PlaneFrameSample sample;
-        sample.stamp_ns = stamp_ns;
-        sample.up_axis = pending_up_.value;
-        sample.p_axis = pending_p_.value;
-        sample.q_axis = pending_q_.value;
-        sample.center = pending_center_.value;
-        sample.corners = msg->polygon.points;
-        plane_samples_.push_back(sample);
-
-        pending_up_.valid = false;
-        pending_p_.valid = false;
-        pending_q_.valid = false;
-        pending_center_.valid = false;
-
-        if (plane_samples_.size() >= 20) {
-            plane_sampling_active_ = false;
-            plane_cv_.notify_all();
-        }
-    }
-    
 private:
     static bool normalize_vector(Eigen::Vector3d& value) {
         const double norm = value.norm();
@@ -588,137 +549,6 @@ private:
 
     static std::vector<double> to_std_vector(const Eigen::Vector3d& value) {
         return {value.x(), value.y(), value.z()};
-    }
-
-    static std::vector<Eigen::Vector3d> take_inlier_directions(
-        const std::vector<Eigen::Vector3d>& samples,
-        double cosine_threshold)
-    {
-        std::vector<Eigen::Vector3d> aligned_samples;
-        aligned_samples.reserve(samples.size());
-
-        Eigen::Vector3d reference = Eigen::Vector3d::Zero();
-        for (auto sample : samples) {
-            if (normalize_vector(sample)) {
-                reference = sample;
-                break;
-            }
-        }
-        if (reference.norm() < 1e-8) {
-            return {};
-        }
-
-        for (auto sample : samples) {
-            if (!normalize_vector(sample)) {
-                continue;
-            }
-            if (sample.dot(reference) < 0.0) {
-                sample = -sample;
-            }
-            aligned_samples.push_back(sample);
-        }
-        if (aligned_samples.empty()) {
-            return {};
-        }
-
-        Eigen::Vector3d mean = Eigen::Vector3d::Zero();
-        for (const auto& sample : aligned_samples) {
-            mean += sample;
-        }
-        if (!normalize_vector(mean)) {
-            return aligned_samples;
-        }
-
-        std::vector<Eigen::Vector3d> inliers;
-        inliers.reserve(aligned_samples.size());
-        for (const auto& sample : aligned_samples) {
-            if (sample.dot(mean) >= cosine_threshold) {
-                inliers.push_back(sample);
-            }
-        }
-        return inliers.empty() ? aligned_samples : inliers;
-    }
-
-    static Eigen::Vector3d filtered_average_direction(
-        const std::vector<Eigen::Vector3d>& samples,
-        double cosine_threshold)
-    {
-        const auto inliers = take_inlier_directions(samples, cosine_threshold);
-        if (inliers.empty()) {
-            return Eigen::Vector3d::Zero();
-        }
-
-        Eigen::Vector3d filtered = Eigen::Vector3d::Zero();
-        for (const auto& sample : inliers) {
-            filtered += sample;
-        }
-        if (!normalize_vector(filtered)) {
-            return Eigen::Vector3d::Zero();
-        }
-        return filtered;
-    }
-
-    static std::vector<Eigen::Vector3d> take_inlier_points(
-        const std::vector<Eigen::Vector3d>& samples,
-        double distance_threshold)
-    {
-        std::vector<Eigen::Vector3d> valid_samples;
-        valid_samples.reserve(samples.size());
-        for (const auto& sample : samples) {
-            if (sample.allFinite()) {
-                valid_samples.push_back(sample);
-            }
-        }
-        if (valid_samples.empty()) {
-            return {};
-        }
-
-        Eigen::Vector3d mean = Eigen::Vector3d::Zero();
-        for (const auto& sample : valid_samples) {
-            mean += sample;
-        }
-        mean /= static_cast<double>(valid_samples.size());
-
-        std::vector<Eigen::Vector3d> inliers;
-        inliers.reserve(valid_samples.size());
-        for (const auto& sample : valid_samples) {
-            if ((sample - mean).norm() <= distance_threshold) {
-                inliers.push_back(sample);
-            }
-        }
-        return inliers.empty() ? valid_samples : inliers;
-    }
-
-    static Eigen::Vector3d filtered_average_point(
-        const std::vector<Eigen::Vector3d>& samples,
-        double distance_threshold)
-    {
-        const auto inliers = take_inlier_points(samples, distance_threshold);
-        if (inliers.empty()) {
-            return Eigen::Vector3d::Zero();
-        }
-
-        Eigen::Vector3d filtered = Eigen::Vector3d::Zero();
-        for (const auto& sample : inliers) {
-            filtered += sample;
-        }
-        filtered /= static_cast<double>(inliers.size());
-        return filtered;
-    }
-
-    void handle_marker_vector(
-        const geometry_msgs::msg::Vector3Stamped::SharedPtr msg,
-        PendingVectorSample& pending_sample)
-    {
-        const int64_t stamp_ns = rclcpp::Time(msg->header.stamp).nanoseconds();
-        std::lock_guard<std::mutex> lk(plane_mutex_);
-        if (!plane_sampling_active_ || stamp_ns < plane_sampling_start_ns_) {
-            return;
-        }
-
-        pending_sample.stamp_ns = stamp_ns;
-        pending_sample.value = Eigen::Vector3d(msg->vector.x, msg->vector.y, msg->vector.z);
-        pending_sample.valid = normalize_vector(pending_sample.value);
     }
 
     /**
@@ -956,115 +786,48 @@ private:
      * @brief 计算g_p_vector, g_q_vector, g_up_vector
      */
     bool calculate_plane(){
-        std::vector<PlaneFrameSample> samples;
+        robo_arm_msgs::msg::PlaneFrame plane_frame;
+
         {
-            std::unique_lock<std::mutex> lk(plane_mutex_);
-            plane_samples_.clear();
-            pending_up_.valid = false;
-            pending_p_.valid = false;
-            pending_q_.valid = false;
-            pending_center_.valid = false;
-            plane_sampling_active_ = true;
-            plane_sampling_start_ns_ = node_->now().nanoseconds();
-
-            const bool ready = plane_cv_.wait_for(
-                lk,
-                std::chrono::seconds(5),
-                [this]() { return plane_samples_.size() >= 20 || !plane_sampling_active_; });
-
-            plane_sampling_active_ = false;
-            samples = plane_samples_;
-
-            if (!ready || samples.size() < 20) {
-                RCLCPP_WARN(LOGGER,
-                    "calculate_plane: only received %zu complete marker_reco frames within timeout",
-                    samples.size());
+            std::lock_guard<std::mutex> lk(plane_mutex_);
+            if (!has_latest_plane_frame_) {
+                RCLCPP_WARN(LOGGER, "calculate_plane: no plane frame received yet");
                 return false;
             }
+            plane_frame = latest_plane_frame_;
+            save_plane_frame_ = plane_frame;
         }
 
-        std::vector<Eigen::Vector3d> q_samples;
-        std::vector<Eigen::Vector3d> p_samples;
-        std::vector<Eigen::Vector3d> up_samples;
-        std::vector<Eigen::Vector3d> center_samples;
-        std::vector<std::vector<Eigen::Vector3d>> corner_samples;
-        q_samples.reserve(samples.size());
-        p_samples.reserve(samples.size());
-        up_samples.reserve(samples.size());
-        center_samples.reserve(samples.size());
-        corner_samples.reserve(4);
-
-        for (const auto& sample : samples) {
-            q_samples.push_back(sample.q_axis);
-            p_samples.push_back(sample.p_axis);
-            up_samples.push_back(sample.up_axis);
-            center_samples.push_back(sample.center);
-
-            if (!sample.corners.empty()) {
-                if (corner_samples.empty()) {
-                    corner_samples.resize(sample.corners.size());
-                }
-                const size_t usable_count = std::min(corner_samples.size(), sample.corners.size());
-                for (size_t i = 0; i < usable_count; ++i) {
-                    const auto& c = sample.corners[i];
-                    corner_samples[i].emplace_back(c.x, c.y, c.z);
-                }
-            }
-        }
-
-        Eigen::Vector3d avg_q = filtered_average_direction(q_samples, 0.94);
-        Eigen::Vector3d avg_p = filtered_average_direction(p_samples, 0.94);
-        Eigen::Vector3d avg_up = filtered_average_direction(up_samples, 0.94);
-        Eigen::Vector3d avg_center = filtered_average_point(center_samples, 0.03);
-        if (!normalize_vector(avg_q) || !normalize_vector(avg_p) || !normalize_vector(avg_up)) {
-            RCLCPP_WARN(LOGGER, "calculate_plane: failed to compute stable marker_reco averages");
-            return false;
-        }
-        if (!avg_center.allFinite()) {
-            RCLCPP_WARN(LOGGER, "calculate_plane: failed to compute stable marker_reco center");
+        if (plane_frame.corners.empty()) {
+            RCLCPP_WARN(LOGGER, "calculate_plane: plane corners are empty");
             return false;
         }
 
-        avg_p -= avg_p.dot(avg_q) * avg_q;
-        if (!normalize_vector(avg_p)) {
-            RCLCPP_WARN(LOGGER, "calculate_plane: averaged p axis collapsed during orthogonalization");
+        Eigen::Vector3d p_axis(plane_frame.p_axis.x, plane_frame.p_axis.y, plane_frame.p_axis.z);
+        Eigen::Vector3d q_axis(plane_frame.q_axis.x, plane_frame.q_axis.y, plane_frame.q_axis.z);
+        Eigen::Vector3d up_axis(plane_frame.up_axis.x, plane_frame.up_axis.y, plane_frame.up_axis.z);
+        Eigen::Vector3d center(plane_frame.center.x, plane_frame.center.y, plane_frame.center.z);
+        std::vector<geometry_msgs::msg::Point32> corners = plane_frame.corners;
+
+        if (!q_axis.allFinite() || !p_axis.allFinite() ||
+            !up_axis.allFinite() || !center.allFinite()) {
+            RCLCPP_WARN(LOGGER, "calculate_plane: filtered marker_reco frame contains non-finite values");
             return false;
         }
 
-        avg_up -= avg_up.dot(avg_q) * avg_q;
-        avg_up -= avg_up.dot(avg_p) * avg_p;
-        if (!normalize_vector(avg_up)) {
-            avg_up = avg_q.cross(avg_p);
-            if (!normalize_vector(avg_up)) {
-                RCLCPP_WARN(LOGGER, "calculate_plane: averaged up axis collapsed during orthogonalization");
-                return false;
-            }
-        }
-
-        Eigen::Vector3d orthogonal_up = avg_q.cross(avg_p);
-        if (!normalize_vector(orthogonal_up)) {
-            RCLCPP_WARN(LOGGER, "calculate_plane: cross product of q and p is degenerate");
-            return false;
-        }
-        if (orthogonal_up.dot(avg_up) < 0.0) {
-            orthogonal_up = -orthogonal_up;
-        }
-        avg_up = orthogonal_up;
-
-        g_p_vector = to_std_vector(avg_p);
-        g_q_vector = to_std_vector(avg_q);
-        g_up_vector = to_std_vector(avg_up);
-        g_plane_center = to_std_vector(avg_center);
+        g_p_vector = to_std_vector(p_axis);
+        g_q_vector = to_std_vector(q_axis);
+        g_up_vector = to_std_vector(up_axis);
+        g_plane_center = to_std_vector(center);
 
         g_plane_corners.clear();
-        g_plane_corners.reserve(corner_samples.size());
-        for (const auto& one_corner_samples : corner_samples) {
-            const Eigen::Vector3d avg_corner = filtered_average_point(one_corner_samples, 0.03);
-            if (!avg_corner.allFinite()) {
-                RCLCPP_WARN(LOGGER, "calculate_plane: failed to compute stable averaged corner");
+        g_plane_corners.reserve(corners.size());
+        for (const auto& c : corners) {
+            if (!std::isfinite(c.x) || !std::isfinite(c.y) || !std::isfinite(c.z)) {
+                RCLCPP_WARN(LOGGER, "calculate_plane: filtered marker_reco corner contains non-finite values");
                 return false;
             }
-            g_plane_corners.push_back(to_std_vector(avg_corner));
+            g_plane_corners.push_back({c.x, c.y, c.z});
         }
 
         RCLCPP_INFO(LOGGER,
@@ -1079,12 +842,13 @@ private:
 
     
     void enter_save(){
-        while (mode_ == ControlMode::Save && save_substate_ != SaveSubState::IDLE) {
+        while (mode_ == ControlMode::Save) {
             switch(save_substate_){
                 case SaveSubState::CalPlane:
                     if (!calculate_plane()) {
-                        RCLCPP_WARN(LOGGER, "Plane calculation failed. Save flow stopped.");
-                        save_substate_ = SaveSubState::IDLE;
+                        RCLCPP_WARN(LOGGER, "Plane calculation failed. Save flow stopped and switched to Idle.");
+                        save_substate_ = SaveSubState::CalPlane;
+                        mode_ = ControlMode::Idle;
                         break;
                     }
                     //q是红色，p是绿色，up是蓝色
@@ -1099,8 +863,9 @@ private:
                     break;
                 case SaveSubState::Hover:
                     if (!calculate_hover_pose()) {
-                        RCLCPP_WARN(LOGGER, "Hover pose calculation failed. Save flow stopped.");
-                        save_substate_ = SaveSubState::IDLE;
+                        RCLCPP_WARN(LOGGER, "Hover pose calculation failed. Save flow stopped and switched to Idle.");
+                        save_substate_ = SaveSubState::CalPlane;
+                        mode_ = ControlMode::Idle;
                         break;
                     }
                     publish_hover_pose_visualization(g_hover_pose);
@@ -1108,23 +873,26 @@ private:
                     
                     wait_for_enter_key();
                     if (!get_energy_unit(0)) { //与取矿调用同一个函数
-                        RCLCPP_WARN(LOGGER, "Hover execution failed. Save flow stopped.");
-                        save_substate_ = SaveSubState::IDLE;
+                        RCLCPP_WARN(LOGGER, "Hover execution failed. Save flow stopped and switched to Idle.");
+                        save_substate_ = SaveSubState::CalPlane;
+                        mode_ = ControlMode::Idle;
                         break;
                     }
                     RCLCPP_INFO(LOGGER, "Finish Executing Hover Pose.");
                     wait_for_enter_key();
-                        if(!plan_incremental_motion({-g_q_vector[0], -g_q_vector[1], -g_q_vector[2]}, 0.2)) {  //与incremental motion调用同一个函数，沿着q_vector插入0.2m
-                        RCLCPP_WARN(LOGGER, "Slide planning failed. Save flow stopped.");
-                        save_substate_ = SaveSubState::IDLE;
+                    if(!plan_incremental_motion({-g_q_vector[0], -g_q_vector[1], -g_q_vector[2]}, 0.2)) {  //与incremental motion调用同一个函数，沿着q_vector插入0.2m
+                        RCLCPP_WARN(LOGGER, "Slide planning failed. Save flow stopped and switched to Idle.");
+                        save_substate_ = SaveSubState::CalPlane;
+                        mode_ = ControlMode::Idle;
                         break;
                     }
                     save_substate_ = SaveSubState::Turn_P;
                     break;
                 case SaveSubState::Slide:
                     if (!plan_incremental_motion({-g_q_vector[0], -g_q_vector[1], -g_q_vector[2]}, 0.1)) {  //与incremental motion调用同一个函数，沿着q_vector滑动0.1m
-                        RCLCPP_WARN(LOGGER, "Slide planning failed. Save flow stopped.");
-                        save_substate_ = SaveSubState::IDLE;
+                        RCLCPP_WARN(LOGGER, "Slide planning failed. Save flow stopped and switched to Idle.");
+                        save_substate_ = SaveSubState::CalPlane;
+                        mode_ = ControlMode::Idle;
                         break;
                     }
                     RCLCPP_INFO(LOGGER, "Finish Planning and Executing Slide...");
@@ -1133,8 +901,9 @@ private:
                     break;
                 case SaveSubState::Turn_P:
                     if (!plan_and_exe_turn_p()) {
-                        RCLCPP_WARN(LOGGER, "Turn around P axis failed. Save flow stopped.");
-                        save_substate_ = SaveSubState::IDLE;
+                        RCLCPP_WARN(LOGGER, "Turn around P axis failed. Save flow stopped and switched to Idle.");
+                        save_substate_ = SaveSubState::CalPlane;
+                        mode_ = ControlMode::Idle;
                         break;
                     }
                     RCLCPP_INFO(LOGGER, "Finish Planning and Executing Turn around P axis...");
@@ -1143,21 +912,21 @@ private:
                     break;
                 case SaveSubState::Turn_Q:
                     if (!plan_and_exe_turn_q()) {
-                        RCLCPP_WARN(LOGGER, "Turn around Q axis failed. Save flow stopped.");
-                        save_substate_ = SaveSubState::IDLE;
+                        RCLCPP_WARN(LOGGER, "Turn around Q axis failed. Save flow stopped and switched to Idle.");
+                        save_substate_ = SaveSubState::CalPlane;
+                        mode_ = ControlMode::Idle;
                         break;
                     }
                     RCLCPP_INFO(LOGGER, "Finish Planning and Executing Turn around Q axis...");
                     wait_for_enter_key();
-                    save_substate_ = SaveSubState::IDLE;
-                    break;
-                case SaveSubState::IDLE:
+                    save_substate_ = SaveSubState::CalPlane;
+                    mode_ = ControlMode::Idle;
                     break;
             }
         }
 
-        if (save_substate_ == SaveSubState::IDLE) {
-            RCLCPP_INFO(LOGGER, "Save operation completed or failed. IDLEing.");
+        if (mode_ == ControlMode::Idle) {
+            RCLCPP_INFO(LOGGER, "Save operation completed or failed. Switched to global Idle.");
         }
     }
     void enter_following() {
@@ -2106,47 +1875,11 @@ int main(int argc, char** argv)
         },
         ctrl_sub_opts);
 
-    auto marker_up_sub = node->create_subscription<geometry_msgs::msg::Vector3Stamped>(
-        "/marker_reco/up_direction", 10,
-        [](const geometry_msgs::msg::Vector3Stamped::SharedPtr msg) {
+    auto marker_plane_sub = node->create_subscription<robo_arm_msgs::msg::PlaneFrame>(
+        "/marker_reco/filtered/plane", 10,
+        [](const robo_arm_msgs::msg::PlaneFrame::SharedPtr msg) {
             if (g_state_machine) {
-                g_state_machine->on_marker_up(msg);
-            }
-        },
-        ctrl_sub_opts);
-
-    auto marker_p_sub = node->create_subscription<geometry_msgs::msg::Vector3Stamped>(
-        "/marker_reco/p_direction", 10,
-        [](const geometry_msgs::msg::Vector3Stamped::SharedPtr msg) {
-            if (g_state_machine) {
-                g_state_machine->on_marker_p(msg);
-            }
-        },
-        ctrl_sub_opts);
-
-    auto marker_q_sub = node->create_subscription<geometry_msgs::msg::Vector3Stamped>(
-        "/marker_reco/q_direction", 10,
-        [](const geometry_msgs::msg::Vector3Stamped::SharedPtr msg) {
-            if (g_state_machine) {
-                g_state_machine->on_marker_q(msg);
-            }
-        },
-        ctrl_sub_opts);
-
-    auto marker_center_sub = node->create_subscription<geometry_msgs::msg::PointStamped>(
-        "/marker_reco/center_3d", 10,
-        [](const geometry_msgs::msg::PointStamped::SharedPtr msg) {
-            if (g_state_machine) {
-                g_state_machine->on_marker_center(msg);
-            }
-        },
-        ctrl_sub_opts);
-
-    auto marker_corners_sub = node->create_subscription<geometry_msgs::msg::PolygonStamped>(
-        "/marker_reco/corners_3d", 10,
-        [](const geometry_msgs::msg::PolygonStamped::SharedPtr msg) {
-            if (g_state_machine) {
-                g_state_machine->on_marker_corners(msg);
+                g_state_machine->on_plane_frame(msg);
             }
         },
         ctrl_sub_opts);

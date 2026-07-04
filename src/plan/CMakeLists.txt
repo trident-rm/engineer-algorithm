@@ -25,6 +25,7 @@ find_package(visualization_msgs REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(interactive_markers REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(robo_arm_msgs REQUIRED)
 
 # Include directories
 include_directories(include)
@@ -126,6 +127,7 @@ ament_target_dependencies(flow_with_pyroki
   moveit_ros_planning_interface
   moveit_visual_tools
   moveit_msgs
+  robo_arm_msgs
 )
 
 # Keyboard input node: reads stdin in raw mode and publishes /key_input (std_msgs/String).

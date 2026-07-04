@@ -227,6 +227,10 @@ usually, use this order: source /opt/ros/jazzy/setup.bash; source /home/hku/ws_m
 - 修改了相机坐标系的外参（刚知道相机坐标系是倒着的）
 - 删除python虚拟环境（因为之前用的也是系统环境，所以把workspace里的.venv删了）
 - 把get_energy_unit里的setJointValueTarget改成了setPoseTarget.
+**Jul 4**
+- 修改平面参数的滤波在marker_reco_node节点里做，calculate_plane目前只做全局变量的赋值，rviz里打开/plane_visualization看可视化
+- 添加了robo_arm_msgs用于存放自定义的消息类型，这样就不用收到数据之后根据时间戳再拼接成同一帧了。
+
 
 ### 路径配置
 如果工作目录不在 `/home/hku/robo_arm`，需要更新 `plan/CMakeLists.txt` 中的绝对路径
@@ -247,15 +251,41 @@ x方向需要加上臂base到轮子最前面的距离
 y方向不用调
 
 ## How to run package pose_gen
-[flow_with_pyroki-3] [WARN] [1782641080.029224637] [flow_with_pyroki]: calculate_plane: only received 0 complete marker_reco frames within timeout
-[flow_with_pyroki-3] [WARN] [1782641080.029414100] [flow_with_pyroki]: Plane calculation failed. Save flow stopped.
 
-ate_monitor]: Didn't receive robot state (joint angles) with recent timestamp within 5.000000 seconds. Requested time 1782643101.521065, but latest received state has time 1782643101.515767.
-[flow_with_pyroki-3] Check clock synchronization if your are running ROS across multiple machines!
-[flow_with_pyroki-3] [ERROR] [1782643106.521547969] [flow_with_pyroki.moveit.ros.move_group_interface]: Failed to fetch current robot state
+## 查看realsense相关
+- 查看版本：which realsense-viewer(which会找可执行文件的精确名字); 或dpkg -l | grep -i 'librealsense\|realsense'
+- 打开rsviewer: realsense-viewer
+- 查看devices: rs-enumerate-devices
 
-p_interface]: Planning request aborted
-[flow_with_pyroki-3] [ERROR] [1782643569.913069261] [flow_with_pyroki.moveit.ros.move_group_interface]: MoveGroupInterface::plan() failed or timeout reached
-[flow_with_pyroki-3] [WARN] [1782643569.913215238] [flow_with_pyroki]: Planning to energy_unit_0 failed (code=99999, error='FAILURE', message='', source='')
-[flow_with_pyroki-3] [WARN] [1782643569.913275887] [flow_with_pyroki]: Hover execution failed. Save flow stopped.
-[flow_with_pyroki-3] [INFO] [17
+
+
+
+
+
+
+
+
+[move_group-2] [INFO] [1783182893.114386255] [move_group]: Calling PlanningRequestAdapter 'CheckStartStateBounds'
+[move_group-2] [INFO] [1783182893.114434772] [move_group]: Calling PlanningRequestAdapter 'CheckStartStateCollision'
+[move_group-2] [INFO] [1783182893.117147128] [move_group.move_group.moveit.planners.ompl.model_based_planning_context]: Planner configuration 'arm' will use planner 'geometric::RRTConnect'. Additional configuration parameters will be set when the planner is constructed.
+[move_group-2] [INFO] [1783182893.117348087] [move_group]: Calling Planner 'OMPL'
+[flow_with_pyroki-3] [INFO] [1783182895.233796239] [flow_with_pyroki]: Current State Mode: 14
+[move_group-2] [ERROR] [1783182898.127977745] [move_group.move_group.moveit.planners.ompl.planner_manager]: ./src/ompl/geometric/planners/rrt/src/RRTConnect.cpp:265 - arm/arm: Unable to sample any valid states for goal tree
+[move_group-2] [WARN] [1783182898.128897744] [move_group.move_group.moveit.planners.ompl.model_based_planning_context]: Invalid goal state
+[move_group-2] [ERROR] [1783182898.396633156] [move_group.move_group.moveit.planners.ompl.model_based_planning_context]: Unable to solve the planning problem
+[move_group-2] [ERROR] [1783182898.397236530] [move_group]: Planner 'OMPL' failed with error code GOAL_STATE_INVALID
+[move_group-2] [ERROR] [1783182898.397309904] [move_group.move_group.moveit.ros.move_group.move_action]: Generating a plan with planning pipeline failed.
+[move_group-2] [INFO] [1783182898.399297517] [move_group.move_group.moveit.ros.move_group.move_action]: FAILURE
+[flow_with_pyroki-3] [INFO] [1783182898.401388647] [flow_with_pyroki.moveit.ros.move_group_interface]: Planning request aborted
+[flow_with_pyroki-3] [ERROR] [1783182898.401927817] [flow_with_pyroki.moveit.ros.move_group_interface]: MoveGroupInterface::plan() failed or timeout reached
+[flow_with_pyroki-3] [WARN] [1783182898.402035405] [flow_with_pyroki]: Planning to energy_unit_0 failed (code=99999, error='FAILURE', message='', source='')
+[flow_with_pyroki-3] [WARN] [1783182898.402065674] [flow_with_pyroki]: Hover execution failed. Save flow stopped and switched to Idle.
+[flow_with_pyroki-3] [INFO] [1783182898.402076204] [flow_with_pyroki]: Save operation completed or failed. Switched to global Idle.
+[flow_with_pyroki-3] [INFO] [1783182899.233915690] [flow_with_pyroki]: Current State Mode: 0
+[flow_with_pyroki-3] [INFO] [1783182903.233791134] [flow_with_pyroki]: Current State Mode: 0
+[flow_with_pyroki-3] [INFO] [1783182905.553760950] [flow_with_pyroki]: Switched to G mode
+[flow_with_pyroki-3] [INFO] [1783182905.571674959] [flow_with_pyroki]: Joint 1: current=0.5000, target=0.5000, diff=0.0000
+[flow_with_pyroki-3] [INFO] [1783182905.571803967] [flow_with_pyroki]: Joint 2: current=-0.5000, target=-0.5000, diff=0.0000
+[flow_with_pyroki-3] [INFO] [1783182905.571818441] [flow_with_pyroki]: Joint 3: current=0.3000, target=0.3000, diff=0.0000
+[flow_with_pyroki-3] [INFO] [1783182905.571829825] [flow_with_pyroki]: Joint 4: current=-0.0000, target=0.0000, diff=0.0000
+[flow_with_pyroki-3] [INFO] [1783182905.571840327] [flow_with_pyroki]: Joint 5: current=1.0000, target=1.0000, diff=0.0000

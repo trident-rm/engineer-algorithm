@@ -7,9 +7,11 @@ import sys
 import shutil
 import subprocess
 import importlib
+from collections import deque
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PointStamped, Vector3Stamped, PolygonStamped, Point32, Point
+from robo_arm_msgs.msg import PlaneFrame
 from visualization_msgs.msg import Marker, MarkerArray
 
 rs = None
@@ -690,10 +692,12 @@ class MarkerRecoNode(Node):
         super().__init__('marker_reco_node')
 
         self.frame_id = 'base_link'
-        self.up_topic = '/marker_reco/up_direction'
-        self.p_topic = '/marker_reco/p_direction'
-        self.q_topic = '/marker_reco/q_direction'
-        self.corners_topic = '/marker_reco/corners_3d'
+        self.filtered_up_topic = '/marker_reco/filtered/up_direction'
+        self.filtered_p_topic = '/marker_reco/filtered/p_direction'
+        self.filtered_q_topic = '/marker_reco/filtered/q_direction'
+        self.filtered_corners_topic = '/marker_reco/filtered/corners_3d'
+        self.filtered_center_topic = '/marker_reco/filtered/center_3d'
+        self.filtered_plane_topic = '/marker_reco/filtered/plane'
         self.viz_topic = '/marker_reco/visualization'
         self.q_arrow_length = 0.12
         self.axis_arrow_length = 0.10
@@ -707,13 +711,19 @@ class MarkerRecoNode(Node):
         self.roi_expand_ratio = 0.05
         self.debug_log_every_n_frames = 15
 
-        self.up_pub = self.create_publisher(Vector3Stamped, self.up_topic, 10)
-        self.p_pub = self.create_publisher(Vector3Stamped, self.p_topic, 10)
-        self.q_pub = self.create_publisher(Vector3Stamped, self.q_topic, 10)
+        self.filtered_up_pub = self.create_publisher(Vector3Stamped, self.filtered_up_topic, 10)
+        self.filtered_p_pub = self.create_publisher(Vector3Stamped, self.filtered_p_topic, 10)
+        self.filtered_q_pub = self.create_publisher(Vector3Stamped, self.filtered_q_topic, 10)
         self.camera_pub = self.create_publisher(Marker, '/marker_reco/camera', 10)
-        self.corners_pub = self.create_publisher(PolygonStamped, self.corners_topic, 10)
-        self.center_pub = self.create_publisher(PointStamped, '/marker_reco/center_3d', 10)
+        self.filtered_corners_pub = self.create_publisher(PolygonStamped, self.filtered_corners_topic, 10)
+        self.filtered_center_pub = self.create_publisher(PointStamped, self.filtered_center_topic, 10)
+        self.filtered_plane_pub = self.create_publisher(PlaneFrame, self.filtered_plane_topic, 10)
         self.viz_pub = self.create_publisher(MarkerArray, self.viz_topic, 10)
+
+        self.filter_window_size = max(5, parse_int_env('MARKER_FILTER_WINDOW', 20))
+        self.filter_cosine_threshold = float(os.getenv('MARKER_FILTER_COSINE_THR', '0.94'))
+        self.filter_point_distance_threshold = float(os.getenv('MARKER_FILTER_POINT_THR', '0.03'))
+        self.filtered_window = deque(maxlen=self.filter_window_size)
 
         self.rs_module = import_pyrealsense2()
         self.pipeline = open_realsense_pipeline()
@@ -736,9 +746,206 @@ class MarkerRecoNode(Node):
         self.timer = self.create_timer(self.timer_period_sec, self.timer_callback)
         self.get_logger().info(
             f'marker_reco_node started, publish frame {self.frame_id}, '
-            f'up to {self.up_topic}, q to {self.q_topic}, p to {self.p_topic}, '
-            f'corners to {self.corners_topic}, viz to {self.viz_topic}'
+            f'filtered to /marker_reco/filtered/*, viz to {self.viz_topic}'
         )
+
+    @staticmethod
+    def _normalize_vector(v):
+        norm = float(np.linalg.norm(v))
+        if norm < 1e-8:
+            return None
+        return (v / norm).astype(np.float32)
+
+    @staticmethod
+    def _filtered_average_direction(samples, cosine_threshold):
+        if not samples:
+            return None
+
+        aligned = []
+        reference = None
+        for s in samples:
+            n = MarkerRecoNode._normalize_vector(np.asarray(s, dtype=np.float32))
+            if n is not None:
+                reference = n
+                break
+        if reference is None:
+            return None
+
+        for s in samples:
+            n = MarkerRecoNode._normalize_vector(np.asarray(s, dtype=np.float32))
+            if n is None:
+                continue
+            if float(np.dot(n, reference)) < 0.0:
+                n = -n
+            aligned.append(n)
+
+        if not aligned:
+            return None
+
+        mean = np.mean(np.stack(aligned, axis=0), axis=0)
+        mean_n = MarkerRecoNode._normalize_vector(mean)
+        if mean_n is None:
+            return None
+
+        inliers = [v for v in aligned if float(np.dot(v, mean_n)) >= cosine_threshold]
+        selected = inliers if inliers else aligned
+        out = np.mean(np.stack(selected, axis=0), axis=0)
+        return MarkerRecoNode._normalize_vector(out)
+
+    @staticmethod
+    def _filtered_average_point(samples, distance_threshold):
+        if not samples:
+            return None
+        arr = np.asarray(samples, dtype=np.float32)
+        arr = arr[np.isfinite(arr).all(axis=1)]
+        if arr.shape[0] == 0:
+            return None
+
+        mean = np.mean(arr, axis=0)
+        dist = np.linalg.norm(arr - mean, axis=1)
+        inlier_mask = dist <= distance_threshold
+        inliers = arr[inlier_mask]
+        if inliers.shape[0] == 0:
+            inliers = arr
+
+        out = np.mean(inliers, axis=0)
+        return out.astype(np.float32)
+
+    def _publish_filtered_geometry(self, stamp, center, q_axis, p_axis, up_axis, corners):
+        plane_msg = PlaneFrame()
+        plane_msg.header.stamp = stamp
+        plane_msg.header.frame_id = self.frame_id
+        plane_msg.p_axis.x = float(p_axis[0])
+        plane_msg.p_axis.y = float(p_axis[1])
+        plane_msg.p_axis.z = float(p_axis[2])
+        plane_msg.q_axis.x = float(q_axis[0])
+        plane_msg.q_axis.y = float(q_axis[1])
+        plane_msg.q_axis.z = float(q_axis[2])
+        plane_msg.up_axis.x = float(up_axis[0])
+        plane_msg.up_axis.y = float(up_axis[1])
+        plane_msg.up_axis.z = float(up_axis[2])
+        plane_msg.center.x = float(center[0])
+        plane_msg.center.y = float(center[1])
+        plane_msg.center.z = float(center[2])
+        for point in corners:
+            corner = Point32()
+            corner.x = float(point[0])
+            corner.y = float(point[1])
+            corner.z = float(point[2])
+            plane_msg.corners.append(corner)
+        self.filtered_plane_pub.publish(plane_msg)
+
+        up_msg = Vector3Stamped()
+        up_msg.header.stamp = stamp
+        up_msg.header.frame_id = self.frame_id
+        up_msg.vector.x = float(up_axis[0])
+        up_msg.vector.y = float(up_axis[1])
+        up_msg.vector.z = float(up_axis[2])
+        self.filtered_up_pub.publish(up_msg)
+
+        p_msg = Vector3Stamped()
+        p_msg.header.stamp = stamp
+        p_msg.header.frame_id = self.frame_id
+        p_msg.vector.x = float(p_axis[0])
+        p_msg.vector.y = float(p_axis[1])
+        p_msg.vector.z = float(p_axis[2])
+        self.filtered_p_pub.publish(p_msg)
+
+        q_msg = Vector3Stamped()
+        q_msg.header.stamp = stamp
+        q_msg.header.frame_id = self.frame_id
+        q_msg.vector.x = float(q_axis[0])
+        q_msg.vector.y = float(q_axis[1])
+        q_msg.vector.z = float(q_axis[2])
+        self.filtered_q_pub.publish(q_msg)
+
+        center_msg = PointStamped()
+        center_msg.header.stamp = stamp
+        center_msg.header.frame_id = self.frame_id
+        center_msg.point.x = float(center[0])
+        center_msg.point.y = float(center[1])
+        center_msg.point.z = float(center[2])
+        self.filtered_center_pub.publish(center_msg)
+
+        corners_msg = PolygonStamped()
+        corners_msg.header.stamp = stamp
+        corners_msg.header.frame_id = self.frame_id
+        for point in corners:
+            corner = Point32()
+            corner.x = float(point[0])
+            corner.y = float(point[1])
+            corner.z = float(point[2])
+            corners_msg.polygon.points.append(corner)
+        self.filtered_corners_pub.publish(corners_msg)
+
+    def _update_and_publish_filtered(self, stamp, center_3d, q_axis, p_axis, up_axis, points_3d):
+        if points_3d is None or len(points_3d) < 3:
+            return
+
+        frame = {
+            'q': np.asarray(q_axis, dtype=np.float32),
+            'p': np.asarray(p_axis, dtype=np.float32),
+            'up': np.asarray(up_axis, dtype=np.float32),
+            'center': np.asarray(center_3d, dtype=np.float32),
+            'corners': np.asarray(points_3d, dtype=np.float32),
+        }
+        self.filtered_window.append(frame)
+
+        q_avg = self._filtered_average_direction(
+            [f['q'] for f in self.filtered_window],
+            self.filter_cosine_threshold,
+        )
+        p_avg = self._filtered_average_direction(
+            [f['p'] for f in self.filtered_window],
+            self.filter_cosine_threshold,
+        )
+        up_avg = self._filtered_average_direction(
+            [f['up'] for f in self.filtered_window],
+            self.filter_cosine_threshold,
+        )
+        center_avg = self._filtered_average_point(
+            [f['center'] for f in self.filtered_window],
+            self.filter_point_distance_threshold,
+        )
+
+        if q_avg is None or p_avg is None or up_avg is None or center_avg is None:
+            return
+
+        p_avg = p_avg - np.dot(p_avg, q_avg) * q_avg
+        p_avg = self._normalize_vector(p_avg)
+        if p_avg is None:
+            return
+
+        up_avg = up_avg - np.dot(up_avg, q_avg) * q_avg
+        up_avg = up_avg - np.dot(up_avg, p_avg) * p_avg
+        up_avg = self._normalize_vector(up_avg)
+        if up_avg is None:
+            up_avg = self._normalize_vector(np.cross(q_avg, p_avg))
+            if up_avg is None:
+                return
+
+        orthogonal_up = self._normalize_vector(np.cross(q_avg, p_avg))
+        if orthogonal_up is None:
+            return
+        if float(np.dot(orthogonal_up, up_avg)) < 0.0:
+            orthogonal_up = -orthogonal_up
+        up_avg = orthogonal_up
+
+        corner_count = int(frame['corners'].shape[0])
+        corner_avg = []
+        for i in range(corner_count):
+            corner_samples = [
+                f['corners'][i]
+                for f in self.filtered_window
+                if f['corners'].shape[0] > i
+            ]
+            one_corner = self._filtered_average_point(corner_samples, self.filter_point_distance_threshold)
+            if one_corner is None:
+                return
+            corner_avg.append(one_corner)
+
+        corner_avg = np.asarray(corner_avg, dtype=np.float32)
+        self._publish_filtered_geometry(stamp, center_avg, q_avg, p_avg, up_avg, corner_avg)
 
     def publish_plane_geometry(self, points_3d, center_3d, q_axis, p_axis=None, up_axis=None):
         points_3d, center_3d, q_axis = transform_points_and_q_to_baselink(points_3d, center_3d, q_axis)
@@ -767,50 +974,7 @@ class MarkerRecoNode(Node):
 
         stamp = self.get_clock().now().to_msg()
 
-        # up: vertical edge direction on the detected plane.
-        up_msg = Vector3Stamped()
-        up_msg.header.stamp = stamp
-        up_msg.header.frame_id = self.frame_id
-        up_msg.vector.x = float(up_axis[0])
-        up_msg.vector.y = float(up_axis[1])
-        up_msg.vector.z = float(up_axis[2])
-        self.up_pub.publish(up_msg)
-
-        p_msg = Vector3Stamped()
-        p_msg.header.stamp = stamp
-        p_msg.header.frame_id = self.frame_id
-        p_msg.vector.x = float(p_axis[0])
-        p_msg.vector.y = float(p_axis[1])
-        p_msg.vector.z = float(p_axis[2])
-        self.p_pub.publish(p_msg)
-
-        # q: plane normal direction.
-        q_msg = Vector3Stamped()
-        q_msg.header.stamp = stamp
-        q_msg.header.frame_id = self.frame_id
-        q_msg.vector.x = float(q_axis[0])
-        q_msg.vector.y = float(q_axis[1])
-        q_msg.vector.z = float(q_axis[2])
-        self.q_pub.publish(q_msg)
-
-        center_msg = PointStamped()
-        center_msg.header.stamp = stamp
-        center_msg.header.frame_id = self.frame_id
-        center_msg.point.x = float(center_3d[0])
-        center_msg.point.y = float(center_3d[1])
-        center_msg.point.z = float(center_3d[2])
-        self.center_pub.publish(center_msg)
-
-        corners_msg = PolygonStamped()
-        corners_msg.header.stamp = stamp
-        corners_msg.header.frame_id = self.frame_id
-        for point in points_3d:
-            corner = Point32()
-            corner.x = float(point[0])
-            corner.y = float(point[1])
-            corner.z = float(point[2])
-            corners_msg.polygon.points.append(corner)
-        self.corners_pub.publish(corners_msg)
+        self._update_and_publish_filtered(stamp, center_3d, q_axis, p_axis, up_axis, points_3d)
 
         self.publish_visualization_markers(points_3d, center_3d, q_axis, p_axis, up_axis, stamp)
 
