@@ -26,8 +26,22 @@
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <moveit_visual_tools/moveit_visual_tools.h>
 #include <moveit/kinematic_constraints/utils.hpp>
+#include <moveit_msgs/msg/move_it_error_codes.hpp>
+#include <moveit_msgs/srv/get_position_ik.hpp>
 #include <robo_arm_msgs/msg/plane_frame.hpp>
 
+//状态机demo的虚假变量
+static const geometry_msgs::msg::Pose fake_hover_pose = []() {
+    geometry_msgs::msg::Pose p;
+    p.position.x = -0.1789;
+    p.position.y = -0.0983;
+    p.position.z = 0.5492;
+    p.orientation.x = -0.0244;
+    p.orientation.y = 0.1637;
+    p.orientation.z = 0.2011;
+    p.orientation.w = 0.9655;
+    return p;
+}();
 
 //全局常量
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("flow_with_pyroki");
@@ -60,9 +74,9 @@ static const std::vector<double> g_energy_unit_2 = {
 };
 static const geometry_msgs::msg::Pose g_energy_unit_2_pose = []() {
     Eigen::Matrix3d rot;
-    rot << 0, sin(M_PI/6), cos(M_PI/6),
-           0, cos(M_PI/6), -sin(M_PI/6),
-          -1, 0, 0;
+    rot << 0, 0, 1,
+           cos(M_PI/3), sin(M_PI/3), 0,
+          -sin(M_PI/3), cos(M_PI/3), 0;
     Eigen::Quaterniond q(rot);
     q.normalize();
     
@@ -81,9 +95,9 @@ static const std::vector<double> g_energy_unit_3 = {
 };
 static const geometry_msgs::msg::Pose g_energy_unit_3_pose = []() {
     Eigen::Matrix3d rot;
-    rot << 0, -sin(M_PI/6), cos(M_PI/6),
-           0, cos(M_PI/6),  sin(M_PI/6),
-          -1, 0, 0;
+    rot << 0, 0, 1,
+           -cos(M_PI/6), sin(M_PI/6), 0,
+          -sin(M_PI/6), -cos(M_PI/6), 0;
 
     Eigen::Quaterniond q(rot);
     q.normalize();
@@ -91,7 +105,7 @@ static const geometry_msgs::msg::Pose g_energy_unit_3_pose = []() {
     geometry_msgs::msg::Pose p;
     p.position.x = 0.3;
     p.position.y = 0.0;
-    p.position.z = 0.20625;
+    p.position.z = 0.525;
     p.orientation.x = q.x();
     p.orientation.y = q.y();
     p.orientation.z = q.z();
@@ -111,9 +125,9 @@ static const geometry_msgs::msg::Pose g_energy_unit_4_pose = []() {
     q.normalize();
     
     geometry_msgs::msg::Pose p;
-    //p.position.x = 0.3;
-    //p.position.y = 0.0;
-    //p.position.z = 0.1125;
+    p.position.x = 0.3;
+    p.position.y = 0.0;
+    p.position.z = 0.525;
     p.orientation.x = q.x();
     p.orientation.y = q.y();
     p.orientation.z = q.z();
@@ -125,16 +139,16 @@ static const std::vector<double> g_energy_unit_5 = {
 };
 static const geometry_msgs::msg::Pose g_energy_unit_5_pose = []() {
     Eigen::Matrix3d rot;
-    rot << 0, sin(M_PI/6), cos(M_PI/6),
-           0, cos(M_PI/6), -sin(M_PI/6),
-          -1, 0, 0;
+    rot << 0, 0, 1,
+           cos(M_PI/3), sin(M_PI/3), 0,
+          -sin(M_PI/3), cos(M_PI/3), 0;
     Eigen::Quaterniond q(rot);
     q.normalize();
     
     geometry_msgs::msg::Pose p;
     p.position.x = 0.3;
     p.position.y = 0.0;
-    p.position.z = 0.20625;
+    p.position.z = 0.525;
     p.orientation.x = q.x();
     p.orientation.y = q.y();
     p.orientation.z = q.z();
@@ -146,16 +160,16 @@ static const std::vector<double> g_energy_unit_6 = {
 };
 static const geometry_msgs::msg::Pose g_energy_unit_6_pose = []() {
     Eigen::Matrix3d rot;
-    rot << 0, -sin(M_PI/6), cos(M_PI/6),
-           0, cos(M_PI/6),  sin(M_PI/6),
-          -1, 0, 0;
+    rot << 0, 0, 1,
+           -cos(M_PI/6), sin(M_PI/6), 0,
+          -sin(M_PI/6), -cos(M_PI/6), 0;
     Eigen::Quaterniond q(rot);
     q.normalize();
     
     geometry_msgs::msg::Pose p;
     p.position.x = 0.3;
     p.position.y = 0.0;
-    p.position.z = 0.39375;
+    p.position.z = 0.525;
     p.orientation.x = q.x();
     p.orientation.y = q.y();
     p.orientation.z = q.z();
@@ -330,6 +344,7 @@ public:
     JointStatePublisherPtr js_pub_;
     MarkerArrayPublisherPtr marker_pub_; //绕P、Q轴旋转相关可视化
     MarkerArrayPublisherPtr plane_pub_; //平面相关可视化
+    rclcpp::Client<moveit_msgs::srv::GetPositionIK>::SharedPtr pyroki_ik_client_;
     
 
     std::mutex plane_mutex_;
@@ -341,7 +356,9 @@ public:
     ControlStateMachine(rclcpp::Node::SharedPtr node, MoveGroupPtr mg, 
         JMGPtr jmg, VTPtr vt, JointStatePublisherPtr js_pub, 
         MarkerArrayPublisherPtr marker_pub, MarkerArrayPublisherPtr plane_pub)
-        : mode_(ControlMode::Following), save_substate_(SaveSubState::CalPlane), mg_(mg), jmg_(jmg), vt_(vt), node_(node), js_pub_(js_pub), marker_pub_(marker_pub), plane_pub_(plane_pub) {}
+        : mode_(ControlMode::Following), save_substate_(SaveSubState::CalPlane), mg_(mg), jmg_(jmg), vt_(vt), node_(node), js_pub_(js_pub), marker_pub_(marker_pub), plane_pub_(plane_pub) {
+        pyroki_ik_client_ = node_->create_client<moveit_msgs::srv::GetPositionIK>("/pyroki_get_position_ik");
+    }
     
     void start() {
         RCLCPP_INFO(LOGGER, "Started");
@@ -598,7 +615,7 @@ private:
      * @date 2026-06-27
      * @todo 可能需要根据p_vector和up_vector的方向调整旋转方向
      */
-    bool plan_and_exe_turn_p(){
+    bool plan_and_exe_turn_p(geometry_msgs::msg::Pose* final_pose = nullptr){
         const double radius = 0.1;
         const int num_points = 40;
 
@@ -606,37 +623,38 @@ private:
         std::vector<geometry_msgs::msg::Pose> waypoints;
         const double angle_range = M_PI / 2;
 
-        Eigen::Vector3d start_pos(g_up_end[0], g_up_end[1], g_up_end[2]);
-        Eigen::Vector3d world_center = start_pos - Eigen::Vector3d(g_q_vector[0], g_q_vector[1], g_q_vector[2]) * radius;
-        Eigen::Vector3d radius_vec0 = start_pos - world_center;
+        Eigen::Vector3d p_axis(g_p_vector[0], g_p_vector[1], g_p_vector[2]);
+        Eigen::Vector3d q_axis(g_q_vector[0], g_q_vector[1], g_q_vector[2]);
+        Eigen::Vector3d up_axis(g_up_vector[0], g_up_vector[1], g_up_vector[2]);
+        if (!normalize_vector(p_axis) || !normalize_vector(q_axis) || !normalize_vector(up_axis)) {
+            RCLCPP_WARN(LOGGER, "plan_and_exe_turn_p: invalid turn axes");
+            return false;
+        }
 
-        const Eigen::Quaterniond start_quat(
-            mg_->getCurrentPose().pose.orientation.w,
-            mg_->getCurrentPose().pose.orientation.x,
-            mg_->getCurrentPose().pose.orientation.y,
-            mg_->getCurrentPose().pose.orientation.z);
-        Eigen::Matrix3d start_rot = start_quat.toRotationMatrix();
-        Eigen::Vector3d start_x = start_rot.col(0);
+        Eigen::Vector3d start_pos(g_up_end[0], g_up_end[1], g_up_end[2]);
+        Eigen::Vector3d world_center = start_pos - q_axis * radius;
+        Eigen::Vector3d radius_vec0 = start_pos - world_center;
+        const double angle_sign = (p_axis.cross(radius_vec0).dot(up_axis) >= 0.0) ? 1.0 : -1.0;
 
         waypoints.reserve(num_points + 1);
         waypoints.push_back(mg_->getCurrentPose().pose);
 
         for (int i = 1; i <= num_points; ++i) {
             double angle = angle_range * static_cast<double>(i) / static_cast<double>(num_points);
-            Eigen::AngleAxisd aa(angle, Eigen::Vector3d(g_p_vector[0], g_p_vector[1], g_p_vector[2]));
+            Eigen::AngleAxisd aa(angle_sign * angle, p_axis);
 
-            //改成了减号，因为是绕着p_vector转，往up_vector方向转（也就是顺时针）
-            Eigen::Vector3d world_point = world_center - aa * radius_vec0;
+            Eigen::Vector3d world_point = world_center + aa * radius_vec0;
 
             geometry_msgs::msg::Pose target_pose;
             target_pose.position.x = world_point.x();
             target_pose.position.y = world_point.y();
             target_pose.position.z = world_point.z();
 
-            // 姿态半圆：末端（gripper）x 轴绕 p_vector 旋转，y 轴保持 up_vector 方向
-            Eigen::Vector3d x_target = (aa * start_x).normalized();
-            Eigen::Vector3d y_target(g_up_vector[0], g_up_vector[1], g_up_vector[2]);
+            // 姿态半圆：q 是末端 -x，p 是末端 -y。
+            Eigen::Vector3d x_target = -(aa * q_axis).normalized();
+            Eigen::Vector3d y_target = -p_axis;
             Eigen::Vector3d z_target = x_target.cross(y_target).normalized();
+            y_target = z_target.cross(x_target).normalized();
 
             Eigen::Matrix3d target_rot;
             target_rot.col(0) = x_target;
@@ -650,6 +668,13 @@ private:
             target_pose.orientation.z = target_quat.z();
             target_pose.orientation.w = target_quat.w();
             waypoints.push_back(target_pose);
+        }
+
+        if (!waypoints.empty()) {
+            if (final_pose != nullptr) {
+                *final_pose = waypoints.back();
+            }
+            publish_target_pose_visualization(waypoints.back(), "target_turn_p", 320);
         }
 
         publish_turn_waypoints(waypoints);
@@ -690,45 +715,60 @@ private:
      * @details gripper x轴旋转，其他轴无所谓
      * @todo 目前绕Q轴旋转的动作规划和绕P轴旋转的动作规划是一样的，可能需要根据实际需求进行调整
      */
-    bool plan_and_exe_turn_q(){
+    bool plan_and_exe_turn_q(geometry_msgs::msg::Pose* final_pose = nullptr){
         const double radius = 0.1;
         const int num_points = 40;
 
-        // 规划半圆轨迹：绕着q_vector顺时针转，圆心在up_end - up_vector*radius
+        // 绕 -q_vector 旋转 30 度，圆心在 up_end - up_vector*radius
         std::vector<geometry_msgs::msg::Pose> waypoints;
-        const double angle_range = M_PI / 2;
+        const double angle_range = M_PI / 6;
 
+        Eigen::Vector3d q_axis(g_q_vector[0], g_q_vector[1], g_q_vector[2]);
+        Eigen::Vector3d up_axis(g_up_vector[0], g_up_vector[1], g_up_vector[2]);
+        if (!normalize_vector(q_axis) || !normalize_vector(up_axis)) {
+            RCLCPP_WARN(LOGGER, "plan_and_exe_turn_q: invalid turn axes");
+            return false;
+        }
+
+        const Eigen::Vector3d rotation_axis = -q_axis;
         Eigen::Vector3d start_pos(g_up_end[0], g_up_end[1], g_up_end[2]);
-        Eigen::Vector3d world_center = start_pos - Eigen::Vector3d(g_up_vector[0], g_up_vector[1], g_up_vector[2]) * radius;
+        Eigen::Vector3d world_center = start_pos - up_axis * radius;
         Eigen::Vector3d radius_vec0 = start_pos - world_center;
 
-        const Eigen::Quaterniond start_quat(
+        Eigen::Quaterniond start_quat(
             mg_->getCurrentPose().pose.orientation.w,
             mg_->getCurrentPose().pose.orientation.x,
             mg_->getCurrentPose().pose.orientation.y,
             mg_->getCurrentPose().pose.orientation.z);
+        start_quat.normalize();
         Eigen::Matrix3d start_rot = start_quat.toRotationMatrix();
-        Eigen::Vector3d start_x = start_rot.col(0);
+        Eigen::Vector3d start_y = start_rot.col(1).normalized();
+        Eigen::Vector3d fixed_z = start_rot.col(2).normalized();
 
         waypoints.reserve(num_points + 1);
         waypoints.push_back(mg_->getCurrentPose().pose);
 
         for (int i = 1; i <= num_points; ++i) {
             double angle = angle_range * static_cast<double>(i) / static_cast<double>(num_points);
-            Eigen::AngleAxisd aa(angle, Eigen::Vector3d(g_q_vector[0], g_q_vector[1], g_q_vector[2]));
+            Eigen::AngleAxisd aa(angle, rotation_axis);
             
-            //改成了减号，因为要绕着q_vector顺时针转
-            Eigen::Vector3d world_point = world_center - aa * radius_vec0;
+            Eigen::Vector3d world_point = world_center + aa * radius_vec0;
 
             geometry_msgs::msg::Pose target_pose;
             target_pose.position.x = world_point.x();
             target_pose.position.y = world_point.y();
             target_pose.position.z = world_point.z();
 
-            // 姿态半圆：末端（gripper）x 轴绕 p_vector 旋转，y 轴保持 up_vector 方向
-            Eigen::Vector3d x_target = (aa * start_x).normalized();
-            Eigen::Vector3d y_target(g_up_vector[0], g_up_vector[1], g_up_vector[2]);
-            Eigen::Vector3d z_target = x_target.cross(y_target).normalized();
+            Eigen::Vector3d z_target = fixed_z;
+            Eigen::Vector3d y_target = aa * start_y;
+            y_target -= y_target.dot(z_target) * z_target;
+            if (y_target.norm() < 1e-8) {
+                RCLCPP_WARN(LOGGER, "plan_and_exe_turn_q: degenerate waypoint orientation");
+                return false;
+            }
+            y_target.normalize();
+            Eigen::Vector3d x_target = y_target.cross(z_target).normalized();
+            y_target = z_target.cross(x_target).normalized();
 
             Eigen::Matrix3d target_rot;
             target_rot.col(0) = x_target;
@@ -742,6 +782,13 @@ private:
             target_pose.orientation.z = target_quat.z();
             target_pose.orientation.w = target_quat.w();
             waypoints.push_back(target_pose);
+        }
+
+        if (!waypoints.empty()) {
+            if (final_pose != nullptr) {
+                *final_pose = waypoints.back();
+            }
+            publish_target_pose_visualization(waypoints.back(), "target_turn_q", 330);
         }
 
         publish_turn_waypoints(waypoints);
@@ -798,8 +845,11 @@ private:
             save_plane_frame_ = plane_frame;
         }
 
-        if (plane_frame.corners.empty()) {
-            RCLCPP_WARN(LOGGER, "calculate_plane: plane corners are empty");
+        if (plane_frame.corners.size() < 3) {
+            RCLCPP_WARN(
+                LOGGER,
+                "calculate_plane: expected >=3 corners from marker_reco, got %zu",
+                plane_frame.corners.size());
             return false;
         }
 
@@ -840,88 +890,203 @@ private:
         return true;
     }
 
+    bool build_incremental_target_pose(
+        const std::vector<double>& direction,
+        double step_size,
+        geometry_msgs::msg::Pose& target_pose)
+    {
+        auto current_state = mg_->getCurrentState(5.0);
+        if (!current_state) {
+            RCLCPP_WARN(LOGGER, "build_incremental_target_pose: failed to get current robot state");
+            return false;
+        }
+
+        const std::string ee = mg_->getEndEffectorLink();
+        const Eigen::Isometry3d& tf = current_state->getGlobalLinkTransform(ee);
+        target_pose.position.x = tf.translation().x() + direction[0] * step_size;
+        target_pose.position.y = tf.translation().y() + direction[1] * step_size;
+        target_pose.position.z = tf.translation().z() + direction[2] * step_size;
+
+        Eigen::Quaterniond q(tf.rotation());
+        q.normalize();
+        target_pose.orientation.x = q.x();
+        target_pose.orientation.y = q.y();
+        target_pose.orientation.z = q.z();
+        target_pose.orientation.w = q.w();
+        return true;
+    }
+
     
     void enter_save(){
         while (mode_ == ControlMode::Save) {
             switch(save_substate_){
-                case SaveSubState::CalPlane:
-                    if (!calculate_plane()) {
-                        RCLCPP_WARN(LOGGER, "Plane calculation failed. Save flow stopped and switched to Idle.");
-                        save_substate_ = SaveSubState::CalPlane;
-                        mode_ = ControlMode::Idle;
-                        break;
-                    }
-                    //q是红色，p是绿色，up是蓝色
-                    publish_plane_visualization(
-                        g_plane_center,
-                        g_q_vector,
-                        g_p_vector,
-                        g_up_vector);                       
-                    RCLCPP_INFO(LOGGER, "Finish Calculating Plane.");
+                case SaveSubState::CalPlane: {
+                    // Demo mode: skip plane estimation and use a fixed fake hover pose.
+                    // if (!calculate_plane()) {
+                    //     RCLCPP_WARN(LOGGER, "Plane calculation failed. Save flow stopped and switched to Idle.");
+                    //     save_substate_ = SaveSubState::CalPlane;
+                    //     mode_ = ControlMode::Idle;
+                    //     break;
+                    // }
+                    // publish_plane_visualization(
+                    //     g_plane_center,
+                    //     g_q_vector,
+                    //     g_p_vector,
+                    //     g_up_vector);
+                    g_hover_pose = fake_hover_pose;
+                    g_plane_center = {
+                        fake_hover_pose.position.x,
+                        fake_hover_pose.position.y,
+                        fake_hover_pose.position.z,
+                    };
+                    Eigen::Quaterniond hover_quat(
+                        fake_hover_pose.orientation.w,
+                        fake_hover_pose.orientation.x,
+                        fake_hover_pose.orientation.y,
+                        fake_hover_pose.orientation.z);
+                    hover_quat.normalize();
+                    const Eigen::Matrix3d hover_rot = hover_quat.toRotationMatrix();
+                    g_q_vector = to_std_vector(-hover_rot.col(0));
+                    g_p_vector = to_std_vector(-hover_rot.col(1));
+                    g_up_vector = to_std_vector(hover_rot.col(2));
+                    RCLCPP_INFO(LOGGER, "Skip plane calculation in Save demo. Using fake_hover_pose and hover-pose-derived axes.");
                     wait_for_enter_key(); //等待N键
                     save_substate_ = SaveSubState::Hover;
                     break;
-                case SaveSubState::Hover:
-                    if (!calculate_hover_pose()) {
-                        RCLCPP_WARN(LOGGER, "Hover pose calculation failed. Save flow stopped and switched to Idle.");
-                        save_substate_ = SaveSubState::CalPlane;
-                        mode_ = ControlMode::Idle;
-                        break;
-                    }
+                }
+
+                case SaveSubState::Hover: {
+                    // Demo mode: keep the preconfigured fake hover pose.
+                    // if (!calculate_hover_pose()) {
+                    //     RCLCPP_WARN(LOGGER, "Hover pose calculation failed. Save flow stopped and switched to Idle.");
+                    //     save_substate_ = SaveSubState::CalPlane;
+                    //     mode_ = ControlMode::Idle;
+                    //     break;
+                    // }
+                    g_hover_pose = fake_hover_pose;
                     publish_hover_pose_visualization(g_hover_pose);
-                    RCLCPP_INFO(LOGGER, "Finish Calculating Hover Pose.");
-                    
+                    RCLCPP_INFO(LOGGER, "Skip hover pose calculation in Save demo. Using fake_hover_pose.");
+
                     wait_for_enter_key();
-                    if (!get_energy_unit(0)) { //与取矿调用同一个函数
-                        RCLCPP_WARN(LOGGER, "Hover execution failed. Save flow stopped and switched to Idle.");
+                    if (!get_energy_unit(0)) {
+                        RCLCPP_WARN(LOGGER, "Hover planning/execution failed, fallback to hover IK check.");
+                        if (!get_energy_unit_target_ik(g_hover_pose)) {
+                            RCLCPP_WARN(LOGGER, "Hover target IK check failed. Save flow stopped and switched to Idle.");
+                            save_substate_ = SaveSubState::CalPlane;
+                            mode_ = ControlMode::Idle;
+                            break;
+                        }
+                        RCLCPP_INFO(LOGGER, "Hover fallback IK check passed.");
+                    } else {
+                        RCLCPP_INFO(LOGGER, "Hover planning/execution succeeded.");
+                    }
+
+                    wait_for_enter_key();
+                    const std::vector<double> insert_dir = {-g_q_vector[0], -g_q_vector[1], -g_q_vector[2]};
+                    geometry_msgs::msg::Pose insert_target_pose;
+                    if (!build_incremental_target_pose(insert_dir, 0.2, insert_target_pose)) {
+                        RCLCPP_WARN(LOGGER, "Insert target pose construction failed. Save flow stopped and switched to Idle.");
                         save_substate_ = SaveSubState::CalPlane;
                         mode_ = ControlMode::Idle;
                         break;
                     }
-                    RCLCPP_INFO(LOGGER, "Finish Executing Hover Pose.");
+
+                    if (!plan_incremental_motion(insert_dir, 0.2)) {
+                        RCLCPP_WARN(LOGGER, "Insert planning failed, fallback to target IK check.");
+                        if (!get_energy_unit_target_ik(insert_target_pose)) {
+                            RCLCPP_WARN(LOGGER, "Insert fallback IK check failed. Save flow stopped and switched to Idle.");
+                            save_substate_ = SaveSubState::CalPlane;
+                            mode_ = ControlMode::Idle;
+                            break;
+                        }
+                        RCLCPP_INFO(LOGGER, "Insert fallback IK check passed.");
+                    } else {
+                        RCLCPP_INFO(LOGGER, "Finish Planning and Executing Insert...");
+                    }
+
+                    save_substate_ = SaveSubState::Slide;
+                    break;
+                }
+
+                case SaveSubState::Slide: {
+                    const std::vector<double> slide_dir = {g_up_vector[0], g_up_vector[1], g_up_vector[2]};
+                    geometry_msgs::msg::Pose slide_target_pose;
                     wait_for_enter_key();
-                    if(!plan_incremental_motion({-g_q_vector[0], -g_q_vector[1], -g_q_vector[2]}, 0.2)) {  //与incremental motion调用同一个函数，沿着q_vector插入0.2m
-                        RCLCPP_WARN(LOGGER, "Slide planning failed. Save flow stopped and switched to Idle.");
+                    if (!build_incremental_target_pose(slide_dir, 0.1, slide_target_pose)) {
+                        RCLCPP_WARN(LOGGER, "Slide target pose construction failed. Save flow stopped and switched to Idle.");
                         save_substate_ = SaveSubState::CalPlane;
                         mode_ = ControlMode::Idle;
                         break;
                     }
+
+                    if (!plan_incremental_motion(slide_dir, 0.1)) {
+                        RCLCPP_WARN(LOGGER, "Slide planning failed, fallback to target IK check.");
+                        if (!get_energy_unit_target_ik(slide_target_pose)) {
+                            RCLCPP_WARN(LOGGER, "Slide fallback IK check failed. Save flow stopped and switched to Idle.");
+                            save_substate_ = SaveSubState::CalPlane;
+                            mode_ = ControlMode::Idle;
+                            break;
+                        }
+                        RCLCPP_INFO(LOGGER, "Slide fallback IK check passed.");
+                    } else {
+                        RCLCPP_INFO(LOGGER, "Finish Planning and Executing Slide...");
+                    }
+
+                    wait_for_enter_key();
                     save_substate_ = SaveSubState::Turn_P;
                     break;
-                case SaveSubState::Slide:
-                    if (!plan_incremental_motion({-g_q_vector[0], -g_q_vector[1], -g_q_vector[2]}, 0.1)) {  //与incremental motion调用同一个函数，沿着q_vector滑动0.1m
-                        RCLCPP_WARN(LOGGER, "Slide planning failed. Save flow stopped and switched to Idle.");
-                        save_substate_ = SaveSubState::CalPlane;
-                        mode_ = ControlMode::Idle;
-                        break;
+                }
+
+                case SaveSubState::Turn_P: {
+                    auto current_state = mg_->getCurrentState(5.0);
+                    const Eigen::Isometry3d& tf = current_state->getGlobalLinkTransform(mg_->getEndEffectorLink());
+                    g_up_end = {tf.translation().x(), tf.translation().y(), tf.translation().z()};
+                    publish_turn_vectors(g_up_end);
+
+                    geometry_msgs::msg::Pose turn_p_target_pose;
+                    if (!plan_and_exe_turn_p(&turn_p_target_pose)) {
+                        RCLCPP_WARN(LOGGER, "Turn around P axis failed, fallback to target IK check.");
+                        if (!get_energy_unit_target_ik(turn_p_target_pose)) {
+                            RCLCPP_WARN(LOGGER, "Turn P fallback IK check failed. Save flow stopped and switched to Idle.");
+                            save_substate_ = SaveSubState::CalPlane;
+                            mode_ = ControlMode::Idle;
+                            break;
+                        }
+                        RCLCPP_INFO(LOGGER, "Turn P fallback IK check passed.");
+                    } else {
+                        RCLCPP_INFO(LOGGER, "Finish Planning and Executing Turn around P axis...");
                     }
-                    RCLCPP_INFO(LOGGER, "Finish Planning and Executing Slide...");
-                    wait_for_enter_key();
-                    save_substate_ = SaveSubState::Turn_P;
-                    break;
-                case SaveSubState::Turn_P:
-                    if (!plan_and_exe_turn_p()) {
-                        RCLCPP_WARN(LOGGER, "Turn around P axis failed. Save flow stopped and switched to Idle.");
-                        save_substate_ = SaveSubState::CalPlane;
-                        mode_ = ControlMode::Idle;
-                        break;
-                    }
-                    RCLCPP_INFO(LOGGER, "Finish Planning and Executing Turn around P axis...");
+
                     wait_for_enter_key();
                     save_substate_ = SaveSubState::Turn_Q;
                     break;
-                case SaveSubState::Turn_Q:
-                    if (!plan_and_exe_turn_q()) {
-                        RCLCPP_WARN(LOGGER, "Turn around Q axis failed. Save flow stopped and switched to Idle.");
-                        save_substate_ = SaveSubState::CalPlane;
-                        mode_ = ControlMode::Idle;
-                        break;
+                }
+
+                case SaveSubState::Turn_Q: {
+                    auto current_state = mg_->getCurrentState(5.0);
+                    const Eigen::Isometry3d& tf = current_state->getGlobalLinkTransform(mg_->getEndEffectorLink());
+                    g_up_end = {tf.translation().x(), tf.translation().y(), tf.translation().z()};
+                    publish_turn_vectors(g_up_end);
+
+                    geometry_msgs::msg::Pose turn_q_target_pose;
+                    if (!plan_and_exe_turn_q(&turn_q_target_pose)) {
+                        RCLCPP_WARN(LOGGER, "Turn around Q axis failed, fallback to target IK check.");
+                        if (!get_energy_unit_target_ik(turn_q_target_pose)) {
+                            RCLCPP_WARN(LOGGER, "Turn Q fallback IK check failed. Save flow stopped and switched to Idle.");
+                            save_substate_ = SaveSubState::CalPlane;
+                            mode_ = ControlMode::Idle;
+                            break;
+                        }
+                        RCLCPP_INFO(LOGGER, "Turn Q fallback IK check passed.");
+                    } else {
+                        RCLCPP_INFO(LOGGER, "Finish Planning and Executing Turn around Q axis...");
                     }
-                    RCLCPP_INFO(LOGGER, "Finish Planning and Executing Turn around Q axis...");
+
                     wait_for_enter_key();
                     save_substate_ = SaveSubState::CalPlane;
                     mode_ = ControlMode::Idle;
                     break;
+                }
             }
         }
 
@@ -962,7 +1127,11 @@ private:
             moveit::planning_interface::MoveGroupInterface::Plan plan;
             auto rc = mg_->plan(plan);
             if (rc != moveit::core::MoveItErrorCode::SUCCESS) {
-                RCLCPP_WARN(LOGGER, "Failed to plan smooth transition (code=%d)", static_cast<int>(rc.val));      // 降级到直接设置目标，而不规划
+                RCLCPP_WARN(
+                    LOGGER,
+                    "Failed to plan smooth transition (code=%d). "
+                    "Likely start-state collision; fallback to direct sync.",
+                    static_cast<int>(rc.val));
                 {
                     std::lock_guard<std::mutex> lk(g_js_mutex);
                     g_arm_state = target_joints;
@@ -1003,32 +1172,26 @@ private:
             return;
         }
 
+        const bool has_four_corners =
+            g_plane_corners.size() >= 4 &&
+            g_plane_corners[0].size() >= 3 &&
+            g_plane_corners[1].size() >= 3 &&
+            g_plane_corners[2].size() >= 3 &&
+            g_plane_corners[3].size() >= 3;
+
+        if (!has_four_corners) {
+            RCLCPP_WARN(
+                LOGGER,
+                "publish_plane_visualization: corners <4, skip corner markers and keep axis markers only (got %zu)",
+                g_plane_corners.size());
+        }
+
         const auto stamp = node_->now();
 
         geometry_msgs::msg::Point center_point;
         center_point.x = center[0];
         center_point.y = center[1];
         center_point.z = center[2];
-
-        geometry_msgs::msg::Point corner_0;
-        geometry_msgs::msg::Point corner_1;
-        geometry_msgs::msg::Point corner_2;
-        geometry_msgs::msg::Point corner_3;
-        corner_0.x = g_plane_corners[0][0];
-        corner_0.y = g_plane_corners[0][1];
-        corner_0.z = g_plane_corners[0][2];
-
-        corner_1.x = g_plane_corners[1][0];
-        corner_1.y = g_plane_corners[1][1];
-        corner_1.z = g_plane_corners[1][2]; 
-
-        corner_2.x = g_plane_corners[2][0];
-        corner_2.y = g_plane_corners[2][1];
-        corner_2.z = g_plane_corners[2][2];
-        
-        corner_3.x = g_plane_corners[3][0];
-        corner_3.y = g_plane_corners[3][1];
-        corner_3.z = g_plane_corners[3][2];
 
         auto make_arrow = [this, &center_point, stamp](
             int id,
@@ -1096,27 +1259,49 @@ private:
         center_marker.lifetime = rclcpp::Duration::from_seconds(0.0);
         center_marker.frame_locked = true;
         
-        visualization_msgs::msg::Marker corner_0_marker = center_marker;
-        corner_0_marker.id = 1;
-        corner_0_marker.pose.position = corner_0;
-
-        visualization_msgs::msg::Marker corner_1_marker = center_marker;
-        corner_1_marker.id = 2;
-        corner_1_marker.pose.position = corner_1;
-
-        visualization_msgs::msg::Marker corner_2_marker = center_marker;
-        corner_2_marker.id = 3;
-        corner_2_marker.pose.position = corner_2;
-
-        visualization_msgs::msg::Marker corner_3_marker = center_marker;
-        corner_3_marker.id = 4;
-        corner_3_marker.pose.position = corner_3;
-
         marker_array.markers.push_back(center_marker);
-        marker_array.markers.push_back(corner_0_marker);
-        marker_array.markers.push_back(corner_1_marker);
-        marker_array.markers.push_back(corner_2_marker);
-        marker_array.markers.push_back(corner_3_marker);
+        if (has_four_corners) {
+            geometry_msgs::msg::Point corner_0;
+            geometry_msgs::msg::Point corner_1;
+            geometry_msgs::msg::Point corner_2;
+            geometry_msgs::msg::Point corner_3;
+            corner_0.x = g_plane_corners[0][0];
+            corner_0.y = g_plane_corners[0][1];
+            corner_0.z = g_plane_corners[0][2];
+
+            corner_1.x = g_plane_corners[1][0];
+            corner_1.y = g_plane_corners[1][1];
+            corner_1.z = g_plane_corners[1][2];
+
+            corner_2.x = g_plane_corners[2][0];
+            corner_2.y = g_plane_corners[2][1];
+            corner_2.z = g_plane_corners[2][2];
+
+            corner_3.x = g_plane_corners[3][0];
+            corner_3.y = g_plane_corners[3][1];
+            corner_3.z = g_plane_corners[3][2];
+
+            visualization_msgs::msg::Marker corner_0_marker = center_marker;
+            corner_0_marker.id = 1;
+            corner_0_marker.pose.position = corner_0;
+
+            visualization_msgs::msg::Marker corner_1_marker = center_marker;
+            corner_1_marker.id = 2;
+            corner_1_marker.pose.position = corner_1;
+
+            visualization_msgs::msg::Marker corner_2_marker = center_marker;
+            corner_2_marker.id = 3;
+            corner_2_marker.pose.position = corner_2;
+
+            visualization_msgs::msg::Marker corner_3_marker = center_marker;
+            corner_3_marker.id = 4;
+            corner_3_marker.pose.position = corner_3;
+
+            marker_array.markers.push_back(corner_0_marker);
+            marker_array.markers.push_back(corner_1_marker);
+            marker_array.markers.push_back(corner_2_marker);
+            marker_array.markers.push_back(corner_3_marker);
+        }
         marker_array.markers.push_back(make_arrow(1, q_axis, 1.0f, 0.2f, 0.1f, 0.12, "plane_q_axis"));
         marker_array.markers.push_back(make_arrow(2, p_axis, 0.1f, 1.0f, 0.1f, 0.10, "plane_p_axis"));
         marker_array.markers.push_back(make_arrow(3, up_axis, 0.1f, 0.4f, 1.0f, 0.10, "plane_up_axis"));
@@ -1328,6 +1513,96 @@ private:
         marker_pub_->publish(marker_array);
     }
 
+    void publish_target_pose_visualization(
+        const geometry_msgs::msg::Pose& target_pose,
+        const std::string& ns,
+        int marker_id_base = 300)
+    {
+        if (!plane_pub_) {
+            return;
+        }
+
+        Eigen::Quaterniond quat(
+            target_pose.orientation.w,
+            target_pose.orientation.x,
+            target_pose.orientation.y,
+            target_pose.orientation.z);
+        if (quat.norm() < 1e-8) {
+            RCLCPP_WARN(LOGGER, "publish_target_pose_visualization: invalid target quaternion (ns=%s)", ns.c_str());
+            return;
+        }
+        quat.normalize();
+        const Eigen::Matrix3d rot = quat.toRotationMatrix();
+        const auto stamp = node_->now();
+
+        geometry_msgs::msg::Point origin;
+        origin.x = target_pose.position.x;
+        origin.y = target_pose.position.y;
+        origin.z = target_pose.position.z;
+
+        auto make_axis_arrow = [stamp, &origin, &ns](
+            int id,
+            const Eigen::Vector3d& axis,
+            float r,
+            float g,
+            float b,
+            double length)
+        {
+            visualization_msgs::msg::Marker marker;
+            marker.header.frame_id = "base_link";
+            marker.header.stamp = stamp;
+            marker.ns = ns;
+            marker.id = id;
+            marker.type = visualization_msgs::msg::Marker::ARROW;
+            marker.action = visualization_msgs::msg::Marker::ADD;
+            marker.pose.orientation.w = 1.0;
+            marker.scale.x = 0.005;
+            marker.scale.y = 0.010;
+            marker.scale.z = 0.010;
+            marker.color.r = r;
+            marker.color.g = g;
+            marker.color.b = b;
+            marker.color.a = 0.95f;
+            marker.lifetime = rclcpp::Duration::from_seconds(0.0);
+            marker.frame_locked = true;
+
+            geometry_msgs::msg::Point end;
+            end.x = origin.x + axis.x() * length;
+            end.y = origin.y + axis.y() * length;
+            end.z = origin.z + axis.z() * length;
+            marker.points.push_back(origin);
+            marker.points.push_back(end);
+            return marker;
+        };
+
+        visualization_msgs::msg::Marker pose_marker;
+        pose_marker.header.frame_id = "base_link";
+        pose_marker.header.stamp = stamp;
+        pose_marker.ns = ns;
+        pose_marker.id = marker_id_base;
+        pose_marker.type = visualization_msgs::msg::Marker::SPHERE;
+        pose_marker.action = visualization_msgs::msg::Marker::ADD;
+        pose_marker.pose.position = origin;
+        pose_marker.pose.orientation.w = 1.0;
+        pose_marker.scale.x = 0.016;
+        pose_marker.scale.y = 0.016;
+        pose_marker.scale.z = 0.016;
+        pose_marker.color.r = 1.0f;
+        pose_marker.color.g = 0.4f;
+        pose_marker.color.b = 0.1f;
+        pose_marker.color.a = 1.0f;
+        pose_marker.lifetime = rclcpp::Duration::from_seconds(0.0);
+        pose_marker.frame_locked = true;
+
+        visualization_msgs::msg::MarkerArray marker_array;
+        marker_array.markers.reserve(4);
+        marker_array.markers.push_back(pose_marker);
+        marker_array.markers.push_back(make_axis_arrow(marker_id_base + 1, rot.col(0), 1.0f, 0.2f, 0.2f, 0.07));
+        marker_array.markers.push_back(make_axis_arrow(marker_id_base + 2, rot.col(1), 0.2f, 1.0f, 0.2f, 0.06));
+        marker_array.markers.push_back(make_axis_arrow(marker_id_base + 3, rot.col(2), 0.2f, 0.3f, 1.0f, 0.06));
+        plane_pub_->publish(marker_array);
+    }
+
     void publish_hover_pose_visualization(const geometry_msgs::msg::Pose& hover_pose) {
         if (!plane_pub_) {
             return;
@@ -1465,6 +1740,8 @@ private:
                 RCLCPP_WARN(LOGGER, "Plan to save_pose failed at attempt %d, trying different orientation (angle: %.2f rad)", 
                     attempt, rotation_angle);
             }
+
+            publish_target_pose_visualization(target_pose, "target_save_pose", 340);
             
             mg_->setPoseTarget(target_pose, mg_->getEndEffectorLink());
             rc = mg_->plan(plan);
@@ -1492,19 +1769,94 @@ private:
         write_trajectory(plan.trajectory.joint_trajectory);
     }
     
-    bool get_energy_unit(int unit_id) {     
-        //std::vector<double> target_pose;   
-        geometry_msgs::msg::Pose target_pose;
-        /** 
-        switch (unit_id) {
-            case 1: target_pose = energy_unit_1_pose; break;
-            case 2: target_pose = energy_unit_2_pose; break;
-            case 3: target_pose = energy_unit_3_pose; break;
-            case 4: target_pose = energy_unit_4_pose; break;
-            case 5: target_pose = energy_unit_5_pose; break;
-            case 6: target_pose = energy_unit_6_pose; break;
+    /**
+     * @brief 对目标位置求IK，探究规划失败的原因
+     */
+    bool get_energy_unit_target_ik(const geometry_msgs::msg::Pose& target_pose){
+
+        publish_target_pose_visualization(target_pose, "target_energy_unit_ik", 350);
+
+        if (!pyroki_ik_client_) {
+            RCLCPP_ERROR(LOGGER, "pyroki IK client is not initialized");
+            return false;
         }
-        */
+
+        if (!pyroki_ik_client_->wait_for_service(std::chrono::seconds(3))) {
+            RCLCPP_WARN(LOGGER, "IK service /pyroki_get_position_ik is unavailable");
+            return false;
+        }
+
+        auto request = std::make_shared<moveit_msgs::srv::GetPositionIK::Request>();
+        request->ik_request.group_name = PLANNING_GROUP;
+        request->ik_request.ik_link_name = mg_->getEndEffectorLink();
+        request->ik_request.pose_stamped.header.frame_id = "base_link";
+        request->ik_request.pose_stamped.header.stamp = node_->now();
+        request->ik_request.pose_stamped.pose = target_pose;
+        request->ik_request.avoid_collisions = false;
+        request->ik_request.timeout.sec = 3;
+        request->ik_request.timeout.nanosec = 0;
+
+        const auto current_joint_values = mg_->getCurrentJointValues();
+        request->ik_request.robot_state.joint_state.name = JOINT_NAMES;
+        request->ik_request.robot_state.joint_state.position = current_joint_values;
+
+        RCLCPP_INFO(LOGGER,
+            "IK check request sent for target pose: pos=(%.4f, %.4f, %.4f)",
+            target_pose.position.x,
+            target_pose.position.y,
+            target_pose.position.z);
+
+        auto future = pyroki_ik_client_->async_send_request(request);
+        const auto status = future.wait_for(std::chrono::seconds(10));
+        if (status != std::future_status::ready) {
+            RCLCPP_WARN(LOGGER, "IK service call timeout for target pose");
+            return false;
+        }
+
+        const auto response = future.get();
+        if (!response) {
+            RCLCPP_WARN(LOGGER, "IK service returned null response for target pose");
+            return false;
+        }
+
+        if (response->error_code.val != moveit_msgs::msg::MoveItErrorCodes::SUCCESS) {
+            RCLCPP_WARN(LOGGER,
+                "IK check failed for target pose (error_code=%d)",
+                response->error_code.val);
+            return false;
+        }
+
+        std::vector<double> ik_solution;
+        ik_solution.resize(JOINT_NAMES.size(), 0.0);
+        const auto& names = response->solution.joint_state.name;
+        const auto& positions = response->solution.joint_state.position;
+        for (size_t i = 0; i < JOINT_NAMES.size(); ++i) {
+            for (size_t j = 0; j < names.size() && j < positions.size(); ++j) {
+                if (names[j] == JOINT_NAMES[i]) {
+                    ik_solution[i] = positions[j];
+                    break;
+                }
+            }
+        }
+
+        RCLCPP_INFO(LOGGER,
+            "IK check passed for target pose: [%.4f, %.4f, %.4f, %.4f, %.4f, %.4f]",
+            ik_solution[0], ik_solution[1], ik_solution[2],
+            ik_solution[3], ik_solution[4], ik_solution[5]);
+
+        // 仅做可视化预览：把IK结果写入g_arm_state，由/joint_states发布到RViz。
+        {
+            std::lock_guard<std::mutex> lk(g_js_mutex);
+            g_arm_state = ik_solution;
+        }
+        RCLCPP_INFO(LOGGER, "IK preview applied to /joint_states for target pose");
+        return true;
+
+    }
+    
+    bool get_energy_unit(int unit_id) {     
+        geometry_msgs::msg::Pose target_pose;
+        
         switch (unit_id) {
             case 0: target_pose = g_hover_pose; break;
             case 1: target_pose = g_energy_unit_1_pose; break;
@@ -1514,64 +1866,46 @@ private:
             case 5: target_pose = g_energy_unit_5_pose; break;
             case 6: target_pose = g_energy_unit_6_pose; break;
         }
+
+        publish_target_pose_visualization(target_pose, "target_energy_unit_plan", 360);
         
         RCLCPP_INFO(LOGGER, "Planning to energy_unit_%d", unit_id);
-
-        const auto current_pose_msg = mg_->getCurrentPose(mg_->getEndEffectorLink()).pose;
-        const Eigen::Vector3d current_pos(
-            current_pose_msg.position.x,
-            current_pose_msg.position.y,
-            current_pose_msg.position.z);
-        const Eigen::Vector3d target_pos(
-            target_pose.position.x,
-            target_pose.position.y,
-            target_pose.position.z);
-        const double pos_err = (target_pos - current_pos).norm();
-
-        Eigen::Quaterniond current_q(
-            current_pose_msg.orientation.w,
-            current_pose_msg.orientation.x,
-            current_pose_msg.orientation.y,
-            current_pose_msg.orientation.z);
-        Eigen::Quaterniond target_q(
-            target_pose.orientation.w,
-            target_pose.orientation.x,
-            target_pose.orientation.y,
-            target_pose.orientation.z);
-        if (current_q.norm() > 1e-8) {
-            current_q.normalize();
-        }
-        if (target_q.norm() > 1e-8) {
-            target_q.normalize();
-        }
-        const double q_dot = std::clamp(std::abs(current_q.dot(target_q)), 0.0, 1.0);
-        const double ori_err_rad = 2.0 * std::acos(q_dot);
-
-        RCLCPP_INFO(LOGGER,
-            "energy_unit_%d target delta: position=%.4fm orientation=%.4frad",
-            unit_id,
-            pos_err,
-            ori_err_rad);
         
         mg_->setStartStateToCurrentState();
         
         const bool target_ok = mg_->setPoseTarget(target_pose, mg_->getEndEffectorLink());
         if (!target_ok) {
             RCLCPP_WARN(LOGGER,
-                "setPoseTarget failed for energy_unit_%d (likely IK target setup failure)",
-                unit_id);
+                "setPoseTarget failed for energy_unit_%d (likely IK target setup failure). "
+                "target_pose: pos=(%.4f, %.4f, %.4f), quat=(%.4f, %.4f, %.4f, %.4f)",
+                unit_id,
+                target_pose.position.x,
+                target_pose.position.y,
+                target_pose.position.z,
+                target_pose.orientation.x,
+                target_pose.orientation.y,
+                target_pose.orientation.z,
+                target_pose.orientation.w);
             return false;
         }
 
         moveit::planning_interface::MoveGroupInterface::Plan plan;
         moveit::core::MoveItErrorCode rc = mg_-> plan(plan);
         if (rc != moveit::core::MoveItErrorCode::SUCCESS || plan.trajectory.joint_trajectory.points.empty()) {
-            RCLCPP_WARN(LOGGER, "Planning to energy_unit_%d failed (code=%d, error='%s', message='%s', source='%s')",
+            RCLCPP_WARN(LOGGER, "Planning to energy_unit_%d failed (code=%d, error='%s', message='%s', source='%s'). "
+                "target_pose: pos=(%.4f, %.4f, %.4f), quat=(%.4f, %.4f, %.4f, %.4f)",
                 unit_id,
                 static_cast<int>(rc.val),
                 moveit::core::errorCodeToString(rc).c_str(),
                 rc.message.c_str(),
-                rc.source.c_str());
+                rc.source.c_str(),
+                target_pose.position.x,
+                target_pose.position.y,
+                target_pose.position.z,
+                target_pose.orientation.x,
+                target_pose.orientation.y,
+                target_pose.orientation.z,
+                target_pose.orientation.w);
             mg_->clearPoseTargets();
             return false;
         }
@@ -1667,6 +2001,8 @@ private:
         target.orientation.y = q.y();
         target.orientation.z = q.z();
         target.orientation.w = q.w();
+
+        publish_target_pose_visualization(target, "target_incremental", 370);
         
         // 使用 Cartesian 路径规划
         std::vector<geometry_msgs::msg::Pose> waypoints;
@@ -1696,6 +2032,11 @@ private:
         write_trajectory(trajectory.joint_trajectory);
         return true;
     }
+
+    /**
+     * @brief 虚假的增量运动规划，仅用于做状态机demo
+     */
+    
     
     /**
      * @brief UpRestrain 模式：消除控制器在 q_vector 方向的偏移
@@ -1905,6 +2246,9 @@ int main(int argc, char** argv)
     // 初始化MoveIt
     auto mg = std::make_shared<moveit::planning_interface::MoveGroupInterface>(node, PLANNING_GROUP);
     mg->setEndEffectorLink("gripper");
+    mg->setPlanningPipelineId("ompl");
+    mg->setPlannerId("BITstar");
+    RCLCPP_INFO(LOGGER, "MoveIt planner: pipeline=ompl, planner=BITstar");
     // const auto* jmg = mg->getRobotModel()->getJointModelGroup(PLANNING_GROUP);
     const moveit::core::JointModelGroup* jmg =
         mg->getCurrentState()->getJointModelGroup(PLANNING_GROUP);

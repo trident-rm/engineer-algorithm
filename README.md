@@ -92,9 +92,8 @@ ros2 run plan read_data
 ```
 src/  
 ├── arms/                          # 机械臂模型 + MoveIt配置  
-│   ├── robo_arm6/                # 旧版机械臂（6关节）
-│   ├── robo_arm10/               # 最新版机械臂（含虚拟link）
-│   ├── robo_arm*_moveit_config/  # MoveIt配置包
+│   ├── robo_arm10/               # 机械臂描述（含虚拟link）
+│   ├── robo_arm10_moveit_config/ # MoveIt配置包
 │   └── ...
 ├── plan/                         # 规划与控制节点
 ├── tools/                        # 通讯工具库
@@ -102,12 +101,10 @@ src/
 ```
 
 ### 机械臂配置
-- **最新版本**: `robo_arm10` 
+- **当前版本**: `robo_arm10` 
   - 包含7个link（第7个是虚拟连杆，位于抓夹中心）
   - 规划组名: `arm`
   - End Effector名: `gripper`
-- **旧版本**: `robo_arm6` 
-  - 实物机械臂对应的URDF和SRDF
 
 ### 调试脚本
 - `debug_serial.py` - 串口通讯调试，打印十六进制数据
@@ -230,6 +227,15 @@ usually, use this order: source /opt/ros/jazzy/setup.bash; source /home/hku/ws_m
 **Jul 4**
 - 修改平面参数的滤波在marker_reco_node节点里做，calculate_plane目前只做全局变量的赋值，rviz里打开/plane_visualization看可视化
 - 添加了robo_arm_msgs用于存放自定义的消息类型，这样就不用收到数据之后根据时间戳再拼接成同一帧了。
+- 把调用get_energy_unit的地方都换成了get_energy_unit_target_ik, 添加了一个pyroki的service来做IK
+- 解决moveit启动时候的问题，解决视觉识别的平面问题，解决求解器更换问题，导有底盘碰撞的版本
+- 添加了一个target_pose可视化函数，发现取矿的旋转矩阵写的不对
+- 添加了一个pyroki_ik的单元测试文件，测试指定一个pose能否逆解。
+**Jul 8**
+- 添加了位置语义信息
+**Jul 12**
+- 突然出现了连之前能够规划成功的路径现在也无法规划成功的问题。对比了修改的东西，发现是删掉了一行srdf里link2和link3的碰撞检测。
+- 添加了一个脚本，绘制可达工作空间
 
 
 ### 路径配置
@@ -256,36 +262,3 @@ y方向不用调
 - 查看版本：which realsense-viewer(which会找可执行文件的精确名字); 或dpkg -l | grep -i 'librealsense\|realsense'
 - 打开rsviewer: realsense-viewer
 - 查看devices: rs-enumerate-devices
-
-
-
-
-
-
-
-
-
-[move_group-2] [INFO] [1783182893.114386255] [move_group]: Calling PlanningRequestAdapter 'CheckStartStateBounds'
-[move_group-2] [INFO] [1783182893.114434772] [move_group]: Calling PlanningRequestAdapter 'CheckStartStateCollision'
-[move_group-2] [INFO] [1783182893.117147128] [move_group.move_group.moveit.planners.ompl.model_based_planning_context]: Planner configuration 'arm' will use planner 'geometric::RRTConnect'. Additional configuration parameters will be set when the planner is constructed.
-[move_group-2] [INFO] [1783182893.117348087] [move_group]: Calling Planner 'OMPL'
-[flow_with_pyroki-3] [INFO] [1783182895.233796239] [flow_with_pyroki]: Current State Mode: 14
-[move_group-2] [ERROR] [1783182898.127977745] [move_group.move_group.moveit.planners.ompl.planner_manager]: ./src/ompl/geometric/planners/rrt/src/RRTConnect.cpp:265 - arm/arm: Unable to sample any valid states for goal tree
-[move_group-2] [WARN] [1783182898.128897744] [move_group.move_group.moveit.planners.ompl.model_based_planning_context]: Invalid goal state
-[move_group-2] [ERROR] [1783182898.396633156] [move_group.move_group.moveit.planners.ompl.model_based_planning_context]: Unable to solve the planning problem
-[move_group-2] [ERROR] [1783182898.397236530] [move_group]: Planner 'OMPL' failed with error code GOAL_STATE_INVALID
-[move_group-2] [ERROR] [1783182898.397309904] [move_group.move_group.moveit.ros.move_group.move_action]: Generating a plan with planning pipeline failed.
-[move_group-2] [INFO] [1783182898.399297517] [move_group.move_group.moveit.ros.move_group.move_action]: FAILURE
-[flow_with_pyroki-3] [INFO] [1783182898.401388647] [flow_with_pyroki.moveit.ros.move_group_interface]: Planning request aborted
-[flow_with_pyroki-3] [ERROR] [1783182898.401927817] [flow_with_pyroki.moveit.ros.move_group_interface]: MoveGroupInterface::plan() failed or timeout reached
-[flow_with_pyroki-3] [WARN] [1783182898.402035405] [flow_with_pyroki]: Planning to energy_unit_0 failed (code=99999, error='FAILURE', message='', source='')
-[flow_with_pyroki-3] [WARN] [1783182898.402065674] [flow_with_pyroki]: Hover execution failed. Save flow stopped and switched to Idle.
-[flow_with_pyroki-3] [INFO] [1783182898.402076204] [flow_with_pyroki]: Save operation completed or failed. Switched to global Idle.
-[flow_with_pyroki-3] [INFO] [1783182899.233915690] [flow_with_pyroki]: Current State Mode: 0
-[flow_with_pyroki-3] [INFO] [1783182903.233791134] [flow_with_pyroki]: Current State Mode: 0
-[flow_with_pyroki-3] [INFO] [1783182905.553760950] [flow_with_pyroki]: Switched to G mode
-[flow_with_pyroki-3] [INFO] [1783182905.571674959] [flow_with_pyroki]: Joint 1: current=0.5000, target=0.5000, diff=0.0000
-[flow_with_pyroki-3] [INFO] [1783182905.571803967] [flow_with_pyroki]: Joint 2: current=-0.5000, target=-0.5000, diff=0.0000
-[flow_with_pyroki-3] [INFO] [1783182905.571818441] [flow_with_pyroki]: Joint 3: current=0.3000, target=0.3000, diff=0.0000
-[flow_with_pyroki-3] [INFO] [1783182905.571829825] [flow_with_pyroki]: Joint 4: current=-0.0000, target=0.0000, diff=0.0000
-[flow_with_pyroki-3] [INFO] [1783182905.571840327] [flow_with_pyroki]: Joint 5: current=1.0000, target=1.0000, diff=0.0000

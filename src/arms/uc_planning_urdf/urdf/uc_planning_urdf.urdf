@@ -195,7 +195,7 @@
         xyz="0 0 0"
         rpy="0 0 0" />
       <geometry>
-        <!--<mesh filename="package://uc_planning_urdf/meshes/link3.STL" />--> 
+        <mesh filename="package://uc_planning_urdf/meshes/link3.STL" />
       </geometry>
     </collision>
   </link>
