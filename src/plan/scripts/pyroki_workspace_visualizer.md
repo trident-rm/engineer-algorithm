@@ -51,7 +51,16 @@ python3 src/plan/scripts/pyroki_workspace_visualizer.py \
 
 参数含义：
 
-- `--bounds XMIN XMAX YMIN YMAX ZMIN ZMAX`：体素区域范围，单位米。
+**坐标系说明**
+
+- 脚本内部采样与可视化使用的是 scene / URDF root（脚本中称为 scene 或 root），也就是 URDF 文件的根节点（你当前的 URDF root 是 `ground`）。
+- 为了更符合机器人控制语义，`--bounds` 参数现在默认被解释为相对于机器人 `base_link` 的坐标（即你在控制器/末端语义里通常使用的基座坐标）。脚本会在内部把 `base_link` 下给定的 bounds 转换到 URDF root（scene）坐标后再做体素采样和渲染。
+
+- 如果你确实想直接以 URDF root（scene）坐标给 bounds，目前可以把数值手动转换后传入，或向我说明我再添加一个开关参数来选择解释为 root/base。
+
+- 示例：`--bounds -0.2 0.2 -0.2 0.2 0.1 0.6` 将被视为 `base_link` 下的范围，脚本会自动变换到 scene 坐标进行采样。
+
+- `--bounds XMIN XMAX YMIN YMAX ZMIN ZMAX`：体素区域范围，单位米（现在默认为 `base_link` 坐标系）。
 - `--step`：体素边长（米），默认 `0.03`。
 - `--direction-samples`：Fibonacci 球面方向数 `N`。
 - `--roll-samples`：每个方向的离散 Roll 数 `M`。

@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""Sample a 3D box, solve IK for each point, and visualize the reachable workspace.
-
-The script reuses the same URDF loading and IK validation flow as the existing
-pyroki unit test node, but instead of solving a single target pose it scans a
-user-defined bounding box and renders the reachable samples as a point cloud.
-"""
 
 from __future__ import annotations
 
@@ -121,11 +115,11 @@ _patch_numpy_asarray_copy_kwarg()
 
 URDF_PATH = os.environ.get(
     "ROBO_ARM_URDF",
-    "/home/hku/robo_arm/src/arms/robo_arm13/urdf/robo_arm13.urdf",
+    "/home/hku/robo_arm/src/arms/combine_urdf/urdf/combine_urdf.urdf",
 )
 EE_LINK = os.environ.get("ROBO_ARM_EE_LINK", "gripper")
 DEFAULT_OUTPUT_NPZ = "/home/hku/robo_arm/output/workspace_scan.npz"
-DEFAULT_CFG = np.zeros((6,), dtype=np.float64)
+DEFAULT_CFG = np.array([0.0, 0.3, 0.0, 0.0, 0.0, 0.0])
 
 LOGGER = logging.getLogger("pyroki_workspace_visualizer")
 
@@ -139,50 +133,37 @@ def _parse_args() -> argparse.Namespace:
         nargs=6,
         type=float,
         metavar=("XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX"),
-        default=[-0.6, 0.6, -0.6, 0.6, 0.1, 0.9],
-        help="Voxel region bounds in meters.",
+        default=[-0.1, 1.5, -0.4, 1.2, 0.9, 1.8],
     )
     parser.add_argument(
         "--step",
         type=float,
-        default=0.03,
-        help="Voxel size in meters.",
+        default=0.05,
     )
     parser.add_argument(
         "--ik-pos-tol",
         type=float,
         default=0.003,
-        help="IK acceptance position tolerance in meters.",
     )
     parser.add_argument(
         "--ik-ori-tol-deg",
         type=float,
         default=3.0,
-        help="IK acceptance orientation tolerance in degrees.",
     )
     parser.add_argument(
         "--max-seed-jitter",
         type=float,
         default=0.08,
-        help="Standard deviation for random IK seed perturbations.",
     )
     parser.add_argument(
         "--seed-count",
         type=int,
         default=6,
-        help="Number of random seed perturbations tried per point.",
     )
     parser.add_argument(
-        "--direction-samples",
+        "--ori-samples",
         type=int,
-        default=64,
-        help="Number of Fibonacci-sphere directions per voxel.",
-    )
-    parser.add_argument(
-        "--roll-samples",
-        type=int,
-        default=4,
-        help="Discrete roll samples around tool Z for each direction.",
+        default=256,
     )
     parser.add_argument(
         "--fixed-wxyz",
@@ -190,39 +171,30 @@ def _parse_args() -> argparse.Namespace:
         type=float,
         metavar=("W", "X", "Y", "Z"),
         default=None,
-        help="Fixed end-effector orientation. Defaults to the nominal pose orientation.",
     )
     parser.add_argument(
         "--port",
         type=int,
         default=8080,
-        help="Viser server port.",
     )
     parser.add_argument(
         "--output-npz",
         type=str,
         default=DEFAULT_OUTPUT_NPZ,
-        help=(
-            "Output .npz path for the export bundle. "
-            f"Defaults to {DEFAULT_OUTPUT_NPZ} and also writes a sibling .csv file."
-        ),
     )
     parser.add_argument(
         "--input-npz",
         type=str,
         default=None,
-        help="Load a previously saved workspace_scan.npz bundle and reopen the slicing GUI without rerunning IK.",
     )
     parser.add_argument(
         "--point-size-scale",
         type=float,
         default=0.6,
-        help="Scale factor applied to rendered point sizes.",
     )
     parser.add_argument(
         "--orientation-demo",
         action="store_true",
-        help="Visualize the current orientation candidate set as pose frames scattered inside a sphere.",
     )
     parser.add_argument(
         "--demo-center",
@@ -230,25 +202,21 @@ def _parse_args() -> argparse.Namespace:
         type=float,
         metavar=("X", "Y", "Z"),
         default=[0.75, -0.45, 0.55],
-        help="Center of the orientation demo sphere in meters.",
     )
     parser.add_argument(
         "--demo-sphere-radius",
         type=float,
         default=0.25,
-        help="Sphere radius in meters for orientation demo visualization.",
     )
     parser.add_argument(
         "--demo-frame-length",
         type=float,
         default=0.025,
-        help="Axis length in meters for each orientation demo pose frame.",
     )
     parser.add_argument(
         "--demo-sphere-opacity",
         type=float,
         default=0.08,
-        help="Opacity of the orientation demo sphere shell.",
     )
     return parser.parse_args()
 
@@ -257,19 +225,41 @@ class WorkspaceReachabilityVisualizer:
     def __init__(self, args: argparse.Namespace):
         self.args = args
         self.logger = LOGGER
+        self._pose_lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._suppress_target_sync = False
 
         self.robot = None
         self.pks = None
         self.urdf = None
         self.viser_urdf = None
+        self.target_control = None
+        self.target_pos_x = None
+        self.target_pos_y = None
+        self.target_pos_z = None
+        self.target_qw = None
+        self.target_qx = None
+        self.target_qy = None
+        self.target_qz = None
+        self.solve_target_btn = None
         self.pk_joint_names = []
         self.cfg = np.array(DEFAULT_CFG, dtype=np.float64, copy=True)
+        self.last_ik_pos_err_m = None
+        self.last_ik_ori_err_rad = None
         self.nominal_ee_pos = np.zeros((3,), dtype=np.float64)
         self.nominal_ee_wxyz = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
         self.fixed_wxyz = None
         self.orientation_candidates = []
         self._scan_thread = None
         self._loaded_scan_bundle = self._read_scan_bundle(args.input_npz) if args.input_npz else None
+        self._scan_step = float(self.args.step)
+        self._layer_groups: dict[float, np.ndarray] = {}
+        self._layer_handles: dict[str, dict[float, Any]] = {"reachable": {}, "unreachable": {}}
+        self._layer_color_min = 0.0
+        self._layer_color_max = 1.0
+        self._render_refresh_lock = threading.Lock()
+        self._render_refresh_timer = None
+        self._enable_target_interaction = self._loaded_scan_bundle is not None
 
         self.server = viser.ViserServer(port=args.port)
         self.server.scene.add_grid("/ground", width=2, height=2)
@@ -277,6 +267,9 @@ class WorkspaceReachabilityVisualizer:
         self.status_text = self.server.gui.add_text("Scan status", "Starting...", disabled=True)
         self.summary_text = self.server.gui.add_text("Workspace summary", "Waiting...", disabled=True)
         self.sample_count_text = self.server.gui.add_text("Sample count", "0", disabled=True)
+        self.ee_pose_text = None
+        if self._enable_target_interaction:
+            self.ee_pose_text = self.server.gui.add_text("Current EE pose", "Waiting...", disabled=True)
         self.legend_html = self.server.gui.add_html(self._build_legend_html("waiting for scan"))
         self.enable_z_slice = self.server.gui.add_checkbox("Enable Z slice", False)
         initial_bounds = self._get_initial_bounds()
@@ -293,10 +286,10 @@ class WorkspaceReachabilityVisualizer:
         self._scan_voxel_ri_arr = None
         self._scan_point_size = max(0.003, float(self.args.step) * float(self.args.point_size_scale))
 
-        self.enable_z_slice.on_update(lambda _: self._refresh_workspace_render())
-        self.z_slice_min.on_update(lambda _: self._refresh_workspace_render())
-        self.z_slice_max.on_update(lambda _: self._refresh_workspace_render())
-        self.show_unreachable.on_update(lambda _: self._refresh_workspace_render())
+        self.enable_z_slice.on_update(lambda _: self._request_workspace_render_refresh())
+        self.z_slice_min.on_update(lambda _: self._request_workspace_render_refresh())
+        self.z_slice_max.on_update(lambda _: self._request_workspace_render_refresh())
+        self.show_unreachable.on_update(lambda _: self._request_workspace_render_refresh())
 
         self.server.scene.add_frame(
             "/workspace_reference",
@@ -307,7 +300,9 @@ class WorkspaceReachabilityVisualizer:
         )
 
         if self._loaded_scan_bundle is not None:
-            self._initialize_robot_visual()
+            self._initialize_robot_runtime()
+            self._initialize_target_control()
+            self._start_ee_pose_printer()
             self._load_saved_scan(self._loaded_scan_bundle)
             return
 
@@ -328,6 +323,254 @@ class WorkspaceReachabilityVisualizer:
 
         self._scan_thread = threading.Thread(target=self._run_scan, daemon=True)
         self._scan_thread.start()
+
+    def _initialize_target_control(self) -> None:
+        if self.robot is None or not self._enable_target_interaction:
+            return
+
+        ee_pos, ee_wxyz = self._fk_ee(self.cfg)
+        if self.target_control is None:
+            self.target_control = self.server.scene.add_transform_controls(
+                "/workspace_target",
+                scale=0.15,
+                position=tuple(float(x) for x in ee_pos),
+                wxyz=tuple(float(x) for x in ee_wxyz),
+            )
+
+            @self.target_control.on_update
+            def _(_):
+                self._sync_inputs_from_target_control()
+                self._handle_target_drag()
+
+            self.server.gui.add_markdown("## IK Target Pose")
+            self.target_pos_x = self.server.gui.add_text("target_x (m)", f"{float(ee_pos[0]):.6f}")
+            self.target_pos_y = self.server.gui.add_text("target_y (m)", f"{float(ee_pos[1]):.6f}")
+            self.target_pos_z = self.server.gui.add_text("target_z (m)", f"{float(ee_pos[2]):.6f}")
+            self.target_qw = self.server.gui.add_text("target_qw", f"{float(ee_wxyz[0]):.6f}")
+            self.target_qx = self.server.gui.add_text("target_qx", f"{float(ee_wxyz[1]):.6f}")
+            self.target_qy = self.server.gui.add_text("target_qy", f"{float(ee_wxyz[2]):.6f}")
+            self.target_qz = self.server.gui.add_text("target_qz", f"{float(ee_wxyz[3]):.6f}")
+            self.solve_target_btn = self.server.gui.add_button("Solve IK From Input Pose")
+
+            def _on_input_update(_):
+                if self._suppress_target_sync:
+                    return
+                self._sync_target_control_from_inputs()
+
+            for handle in (
+                self.target_pos_x,
+                self.target_pos_y,
+                self.target_pos_z,
+                self.target_qw,
+                self.target_qx,
+                self.target_qy,
+                self.target_qz,
+            ):
+                handle.on_update(_on_input_update)
+
+            @self.solve_target_btn.on_click
+            def _(_):
+                self._solve_from_input_pose()
+        else:
+            self.target_control.position = tuple(float(x) for x in ee_pos)
+            self.target_control.wxyz = tuple(float(x) for x in ee_wxyz)
+            self._sync_inputs_from_target_control()
+
+    def _parse_input_pose(self) -> tuple[np.ndarray | None, np.ndarray | None]:
+        handles = (
+            self.target_pos_x,
+            self.target_pos_y,
+            self.target_pos_z,
+            self.target_qw,
+            self.target_qx,
+            self.target_qy,
+            self.target_qz,
+        )
+        if any(h is None for h in handles):
+            return None, None
+
+        try:
+            pos = np.array(
+                [
+                    float(str(self.target_pos_x.value).strip()),
+                    float(str(self.target_pos_y.value).strip()),
+                    float(str(self.target_pos_z.value).strip()),
+                ],
+                dtype=np.float64,
+            )
+            wxyz = np.array(
+                [
+                    float(str(self.target_qw.value).strip()),
+                    float(str(self.target_qx.value).strip()),
+                    float(str(self.target_qy.value).strip()),
+                    float(str(self.target_qz.value).strip()),
+                ],
+                dtype=np.float64,
+            )
+        except (TypeError, ValueError):
+            return None, None
+
+        if not np.all(np.isfinite(pos)) or not np.all(np.isfinite(wxyz)):
+            return None, None
+
+        q_norm = float(np.linalg.norm(wxyz))
+        if q_norm < 1e-8:
+            return None, None
+        return pos, (wxyz / q_norm)
+
+    def _sync_inputs_from_target_control(self) -> None:
+        if self.target_control is None:
+            return
+        if any(
+            handle is None
+            for handle in (
+                self.target_pos_x,
+                self.target_pos_y,
+                self.target_pos_z,
+                self.target_qw,
+                self.target_qx,
+                self.target_qy,
+                self.target_qz,
+            )
+        ):
+            return
+
+        pos = np.asarray(self.target_control.position, dtype=np.float64)
+        wxyz = np.asarray(self.target_control.wxyz, dtype=np.float64)
+        if pos.shape != (3,) or wxyz.shape != (4,):
+            return
+        q_norm = float(np.linalg.norm(wxyz))
+        if q_norm < 1e-8:
+            return
+        wxyz = wxyz / q_norm
+
+        self._suppress_target_sync = True
+        try:
+            self.target_pos_x.value = f"{float(pos[0]):.8f}"
+            self.target_pos_y.value = f"{float(pos[1]):.8f}"
+            self.target_pos_z.value = f"{float(pos[2]):.8f}"
+            self.target_qw.value = f"{float(wxyz[0]):.8f}"
+            self.target_qx.value = f"{float(wxyz[1]):.8f}"
+            self.target_qy.value = f"{float(wxyz[2]):.8f}"
+            self.target_qz.value = f"{float(wxyz[3]):.8f}"
+        finally:
+            self._suppress_target_sync = False
+
+    def _sync_target_control_from_inputs(self) -> bool:
+        if self.target_control is None:
+            return False
+        pos, wxyz = self._parse_input_pose()
+        if pos is None or wxyz is None:
+            self.status_text.value = "Input pose invalid"
+            return False
+
+        self._suppress_target_sync = True
+        try:
+            self.target_control.position = tuple(float(v) for v in pos)
+            self.target_control.wxyz = tuple(float(v) for v in wxyz)
+        finally:
+            self._suppress_target_sync = False
+        return True
+
+    def _solve_from_input_pose(self) -> None:
+        if not self._sync_target_control_from_inputs():
+            return
+        self._handle_target_drag()
+
+    def _handle_target_drag(self) -> None:
+        if self.target_control is None:
+            return
+
+        target_position = np.asarray(self.target_control.position, dtype=np.float64)
+        target_wxyz = np.asarray(self.target_control.wxyz, dtype=np.float64)
+        try:
+            cfg_solution = self.pks.solve_ik(
+                robot=self.robot,
+                target_link_name=EE_LINK,
+                target_position=target_position,
+                target_wxyz=target_wxyz,
+                init_config=np.array(self.cfg, dtype=np.float64, copy=True),
+            )
+        except TypeError:
+            try:
+                cfg_solution = self.pks.solve_ik(
+                    robot=self.robot,
+                    target_link_name=EE_LINK,
+                    target_position=target_position,
+                    target_wxyz=target_wxyz,
+                )
+            except Exception as exc:
+                self.status_text.value = "Target IK failed"
+                with self._pose_lock:
+                    self.last_ik_pos_err_m = None
+                    self.last_ik_ori_err_rad = None
+                self.logger.warning(
+                    "Target IK failed for pos=%s wxyz=%s: %s",
+                    target_position.tolist(),
+                    target_wxyz.tolist(),
+                    exc,
+                )
+                return
+        except Exception as exc:
+            self.status_text.value = "Target IK failed"
+            with self._pose_lock:
+                self.last_ik_pos_err_m = None
+                self.last_ik_ori_err_rad = None
+            self.logger.warning(
+                "Target IK failed for pos=%s wxyz=%s: %s",
+                target_position.tolist(),
+                target_wxyz.tolist(),
+                exc,
+            )
+            return
+
+        cfg_solution_arr = np.asarray(cfg_solution, dtype=np.float64)
+        ee_pos, ee_wxyz = self._fk_ee(cfg_solution_arr)
+        pos_err = float(np.linalg.norm(ee_pos - target_position))
+        ori_err_rad = float(self._quat_angle_error_rad(target_wxyz, ee_wxyz))
+
+        with self._pose_lock:
+            self.cfg = cfg_solution_arr
+            self.last_ik_pos_err_m = pos_err
+            self.last_ik_ori_err_rad = ori_err_rad
+
+        self.viser_urdf.update_cfg(self.cfg)
+        self.status_text.value = (
+            f"Target IK ok: pos_err={pos_err:.4f} m, ori_err={np.rad2deg(ori_err_rad):.2f} deg"
+        )
+        if self.ee_pose_text is not None:
+            self.ee_pose_text.value = f"pos={ee_pos.tolist()} wxyz={ee_wxyz.tolist()}"
+        self._sync_inputs_from_target_control()
+
+    def _start_ee_pose_printer(self) -> None:
+        if self._stop_event.is_set() or not self._enable_target_interaction or self.ee_pose_text is None:
+            return
+
+        thread = threading.Thread(target=self._print_ee_pose_loop, daemon=True)
+        thread.start()
+
+    def _print_ee_pose_loop(self) -> None:
+        last_print = 0.0
+        while not self._stop_event.is_set():
+            now = time.time()
+            if now - last_print >= 1.0:
+                with self._pose_lock:
+                    cfg = np.array(self.cfg, dtype=np.float64, copy=True)
+                    pos_err = self.last_ik_pos_err_m
+                    ori_err_rad = self.last_ik_ori_err_rad
+                ee_pos, ee_wxyz = self._fk_ee(cfg)
+                if self.ee_pose_text is not None:
+                    self.ee_pose_text.value = f"pos={ee_pos.tolist()} wxyz={ee_wxyz.tolist()}"
+                if pos_err is not None and ori_err_rad is not None:
+                    err_text = f" ik_pos_err_m={pos_err:.6f} ik_ori_err_deg={np.rad2deg(ori_err_rad):.4f}"
+                else:
+                    err_text = " ik_pos_err_m=N/A ik_ori_err_deg=N/A"
+                print(
+                    f"[workspace_visualizer] ee_pos={ee_pos.tolist()} ee_wxyz={ee_wxyz.tolist()}{err_text}",
+                    flush=True,
+                )
+                last_print = now
+            self._stop_event.wait(0.1)
 
     def _initialize_robot_runtime(self) -> None:
         if pk is None:
@@ -414,8 +657,7 @@ class WorkspaceReachabilityVisualizer:
                 else None,
                 "bounds": np.asarray(bundle["bounds"], dtype=np.float64) if "bounds" in bundle else None,
                 "step": float(bundle["step"]) if "step" in bundle else float(self.args.step),
-                "direction_samples": int(bundle["direction_samples"]) if "direction_samples" in bundle else None,
-                "roll_samples": int(bundle["roll_samples"]) if "roll_samples" in bundle else None,
+                "ori_samples": int(bundle["ori_samples"]) if "ori_samples" in bundle else None,
                 "fixed_wxyz": np.asarray(bundle["fixed_wxyz"], dtype=np.float64) if "fixed_wxyz" in bundle else None,
             }
 
@@ -440,8 +682,10 @@ class WorkspaceReachabilityVisualizer:
 
         self._scan_voxel_arr = voxel_arr
         self._scan_voxel_ri_arr = voxel_ri_arr
+        self._scan_step = float(bundle.get("step", self.args.step))
         self._scan_point_size = max(0.003, float(bundle["step"]) * float(self.args.point_size_scale))
         self.fixed_wxyz = bundle.get("fixed_wxyz")
+        self._prepare_workspace_layer_cache()
 
         if voxel_arr.shape[0] > 0:
             self._refresh_workspace_render()
@@ -461,10 +705,8 @@ class WorkspaceReachabilityVisualizer:
             )
 
         orientation_summary = ""
-        if bundle.get("direction_samples") is not None and bundle.get("roll_samples") is not None:
-            orientation_summary = (
-                f", orientations={int(bundle['direction_samples'])}x{int(bundle['roll_samples'])}"
-            )
+        if bundle.get("ori_samples") is not None:
+            orientation_summary = f", orientations={int(bundle['ori_samples'])}"
 
         summary = (
             f"loaded saved scan: reachable={reachable_count}/{total} ({success_rate:.1f}%)"
@@ -484,31 +726,6 @@ class WorkspaceReachabilityVisualizer:
         if norm < 1e-8:
             raise ValueError("fixed quaternion norm is zero")
         return fixed_wxyz / norm
-
-    @staticmethod
-    def _quat_multiply_wxyz(lhs: np.ndarray, rhs: np.ndarray) -> np.ndarray:
-        w1, x1, y1, z1 = [float(v) for v in lhs]
-        w2, x2, y2, z2 = [float(v) for v in rhs]
-        return np.array(
-            [
-                w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
-                w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
-                w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
-                w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
-            ],
-            dtype=np.float64,
-        )
-
-    @staticmethod
-    def _axis_angle_to_wxyz(axis: np.ndarray, angle_rad: float) -> np.ndarray:
-        axis = np.array(axis, dtype=np.float64)
-        axis_norm = float(np.linalg.norm(axis))
-        if axis_norm < 1e-8:
-            raise ValueError("rotation axis norm is zero")
-        axis = axis / axis_norm
-        half = 0.5 * float(angle_rad)
-        sin_half = float(np.sin(half))
-        return np.array([float(np.cos(half)), *(axis * sin_half)], dtype=np.float64)
 
     @staticmethod
     def _normalize_unit_quaternions(quaternions: np.ndarray) -> np.ndarray:
@@ -561,17 +778,6 @@ class WorkspaceReachabilityVisualizer:
 
     @staticmethod
     def _test_uniformity(quaternions: np.ndarray | None = None) -> dict[str, Any]:
-        """Quantify the uniformity of SO(3) samples with dispersion and L-uniformity.
-
-        The metric uses the natural geodesic distance on SO(3) induced by unit quaternions:
-        d(q1, q2) = arccos(|q1 · q2|).
-
-        - dispersion: the largest geodesic distance from a dense reference set to the nearest sample.
-        - separation distance: half the minimum pairwise sample distance.
-        - L-uniformity: dispersion / separation_distance.
-
-        Smaller values indicate a more uniform covering of SO(3).
-        """
         if quaternions is None:
             quats = np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float64)
         else:
@@ -627,6 +833,32 @@ class WorkspaceReachabilityVisualizer:
         return np.stack([x, y, z], axis=1).astype(np.float64)
 
     @staticmethod
+    def _uniform_so3_quaternions(sample_count: int) -> np.ndarray:
+        if sample_count <= 0:
+            return np.zeros((0, 4), dtype=np.float64)
+
+        rng = np.random.default_rng(0)
+        pool_size = max(128 * sample_count, 1024)
+        pool = rng.normal(size=(pool_size, 4)).astype(np.float64)
+        pool = WorkspaceReachabilityVisualizer._normalize_unit_quaternions(pool)
+
+        selected = np.empty((sample_count, 4), dtype=np.float64)
+        selected[0] = pool[0]
+        if sample_count == 1:
+            return selected
+
+        min_distances = np.full((pool_size,), np.inf, dtype=np.float64)
+        min_distances = np.minimum(min_distances, np.arccos(np.clip(np.abs(pool @ selected[0]), 0.0, 1.0)))
+
+        for selected_idx in range(1, sample_count):
+            next_index = int(np.argmax(min_distances))
+            selected[selected_idx] = pool[next_index]
+            candidate_distances = np.arccos(np.clip(np.abs(pool @ selected[selected_idx]), 0.0, 1.0))
+            min_distances = np.minimum(min_distances, candidate_distances)
+
+        return selected
+
+    @staticmethod
     def _rotmat_to_wxyz(rotation: np.ndarray) -> np.ndarray:
         r = np.asarray(rotation, dtype=np.float64)
         trace = float(np.trace(r))
@@ -660,62 +892,23 @@ class WorkspaceReachabilityVisualizer:
             return np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
         return q / q_norm
 
-    @staticmethod
-    def _build_alignment_rotation(direction: np.ndarray) -> np.ndarray:
-        z_axis = np.asarray(direction, dtype=np.float64)
-        z_norm = float(np.linalg.norm(z_axis))
-        if z_norm < 1e-8:
-            raise ValueError("direction norm is zero")
-        z_axis = z_axis / z_norm
-
-        ref = np.array([0.0, 0.0, 1.0], dtype=np.float64)
-        if abs(float(np.dot(ref, z_axis))) > 0.95:
-            ref = np.array([0.0, 1.0, 0.0], dtype=np.float64)
-
-        x_axis = np.cross(ref, z_axis)
-        x_axis /= max(float(np.linalg.norm(x_axis)), 1e-12)
-        y_axis = np.cross(z_axis, x_axis)
-        y_axis /= max(float(np.linalg.norm(y_axis)), 1e-12)
-
-        return np.column_stack([x_axis, y_axis, z_axis])
-
     def _build_orientation_candidates(self):
-        direction_samples = int(self.args.direction_samples)
-        roll_samples = int(self.args.roll_samples)
-        if direction_samples <= 0:
-            raise ValueError("--direction-samples must be positive")
-        if roll_samples <= 0:
-            raise ValueError("--roll-samples must be positive")
+        ori_samples = int(self.args.ori_samples)
+        if ori_samples <= 0:
+            raise ValueError("--ori-samples must be positive")
 
-        directions = self._fibonacci_sphere_directions(direction_samples)
-        roll_angles = np.linspace(0.0, 2.0 * np.pi, roll_samples, endpoint=False, dtype=np.float64)
-        candidates = []
-
-        for direction in directions:
-            align_rot = self._build_alignment_rotation(direction)
-            for roll_angle in roll_angles:
-                roll_rot = np.array(
-                    [
-                        [np.cos(roll_angle), -np.sin(roll_angle), 0.0],
-                        [np.sin(roll_angle), np.cos(roll_angle), 0.0],
-                        [0.0, 0.0, 1.0],
-                    ],
-                    dtype=np.float64,
-                )
-                rotation = align_rot @ roll_rot
-                candidate_wxyz = self._rotmat_to_wxyz(rotation)
-                candidates.append(candidate_wxyz)
-
-        uniformity_report = self._test_uniformity(np.asarray(candidates, dtype=np.float64))
+        candidates = self._uniform_so3_quaternions(ori_samples)
+        uniformity_report = self._test_uniformity(candidates)
         self.logger.info(
             "SO(3) orientation uniformity report: %s",
             {
-                "direction_samples": direction_samples,
-                "roll_samples": roll_samples,
+                "ori_samples": ori_samples,
+                "method": "greedy_maximin_haar",
+                "pool_size": max(8 * ori_samples, 1024),
                 **uniformity_report,
             },
         )
-        return candidates
+        return [np.asarray(quat, dtype=np.float64) for quat in candidates]
 
     def _build_demo_origins(self, count: int, center: np.ndarray, radius: float) -> np.ndarray:
         if count <= 0:
@@ -767,8 +960,8 @@ class WorkspaceReachabilityVisualizer:
             )
 
         summary = (
-            f"orientation demo: poses={pose_count}, directions={int(self.args.direction_samples)}, "
-            f"rolls={int(self.args.roll_samples)}, sphere_radius={sphere_radius:.3f} m"
+            f"orientation demo: poses={pose_count}, ori_samples={int(self.args.ori_samples)}, "
+            f"sphere_radius={sphere_radius:.3f} m"
         )
         self.status_text.value = "Orientation demo ready"
         self.summary_text.value = summary
@@ -816,7 +1009,7 @@ class WorkspaceReachabilityVisualizer:
         transform[:3, :3] = rot
         transform[:3, 3] = np.asarray(position, dtype=np.float64)
         return transform
-
+    
     @staticmethod
     def _quat_angle_error_rad(target_wxyz: np.ndarray, actual_wxyz: np.ndarray) -> float:
         t = np.array(target_wxyz, dtype=np.float64)
@@ -996,85 +1189,185 @@ class WorkspaceReachabilityVisualizer:
         return None, None, None
 
     def _clear_workspace_render(self) -> None:
-        if self._reachable_handle is not None:
-            self._reachable_handle.remove()
-            self._reachable_handle = None
-        if self._unreachable_handle is not None:
-            self._unreachable_handle.remove()
-            self._unreachable_handle = None
+        for handle_map in self._layer_handles.values():
+            for handle in list(handle_map.values()):
+                try:
+                    handle.remove()
+                except Exception:
+                    pass
+            handle_map.clear()
+        self._reachable_handle = None
+        self._unreachable_handle = None
+        # debug handles for temporary markers (support multiple per-layer handles)
+        if hasattr(self, "_debug_handles"):
+            try:
+                for h in list(self._debug_handles):
+                    if h is None:
+                        continue
+                    try:
+                        h.remove()
+                    except Exception:
+                        pass
+                self._debug_handles = []
+            except Exception:
+                self._debug_handles = []
+
+    def _prepare_workspace_layer_cache(self) -> None:
+        if self._scan_voxel_arr is None or self._scan_voxel_arr.shape[0] == 0:
+            self._layer_groups = {}
+            self._layer_handles = {"reachable": {}, "unreachable": {}}
+            self._layer_color_min = 0.0
+            self._layer_color_max = 1.0
+            return
+
+        z_values = np.round(np.asarray(self._scan_voxel_arr[:, 2], dtype=np.float64), 8)
+        unique_zs = np.unique(z_values)
+        self._layer_groups = {
+            float(z_key): np.flatnonzero(z_values == z_key)
+            for z_key in unique_zs
+        }
+        self._layer_handles = {"reachable": {}, "unreachable": {}}
+
+        reachable_values = self._scan_voxel_ri_arr[self._scan_voxel_ri_arr > 0.0]
+        if reachable_values.size > 0:
+            self._layer_color_min = float(np.min(reachable_values))
+            self._layer_color_max = float(np.max(reachable_values))
+        else:
+            self._layer_color_min = 0.0
+            self._layer_color_max = 1.0
+
+    def _request_workspace_render_refresh(self) -> None:
+        with self._render_refresh_lock:
+            if self._render_refresh_timer is not None:
+                self._render_refresh_timer.cancel()
+
+            timer = threading.Timer(0.08, self._refresh_workspace_render)
+            timer.daemon = True
+            self._render_refresh_timer = timer
+            timer.start()
+
+    def _get_visible_layer_keys(self) -> list[float]:
+        if self._scan_voxel_arr is None or self._scan_voxel_arr.shape[0] == 0:
+            return []
+
+        layer_keys = sorted(self._layer_groups.keys())
+        if not self.enable_z_slice.value:
+            return layer_keys
+
+        z_min = min(float(self.z_slice_min.value), float(self.z_slice_max.value))
+        z_max = max(float(self.z_slice_min.value), float(self.z_slice_max.value))
+        return [z_key for z_key in layer_keys if z_min <= z_key <= z_max]
+
+    def _sync_layer_handle(self, layer_z: float, kind: str, should_show: bool) -> None:
+        handle_map = self._layer_handles[kind]
+        layer_indices = self._layer_groups.get(layer_z)
+        if layer_indices is None:
+            return
+
+        existing_handle = handle_map.get(layer_z)
+        if not should_show:
+            if existing_handle is not None:
+                try:
+                    existing_handle.remove()
+                except Exception:
+                    pass
+                del handle_map[layer_z]
+            return
+
+        if existing_handle is not None:
+            return
+
+        layer_points = self._scan_voxel_arr[layer_indices]
+        layer_ri = self._scan_voxel_ri_arr[layer_indices]
+
+        if kind == "reachable":
+            visible_mask = layer_ri > 0.0
+            if not np.any(visible_mask):
+                return
+
+            visible_points = layer_points[visible_mask]
+            visible_ri = layer_ri[visible_mask]
+            if self._layer_color_max - self._layer_color_min > 1e-8:
+                normalized_ri = (visible_ri - self._layer_color_min) / (self._layer_color_max - self._layer_color_min)
+            else:
+                normalized_ri = np.zeros_like(visible_ri, dtype=np.float32)
+
+            handle_map[layer_z] = self.server.scene.add_point_cloud(
+                f"/workspace/ri_voxels_reachable/{layer_z:.8f}",
+                visible_points,
+                self._viridis_colormap(normalized_ri),
+                point_size=self._scan_point_size,
+                point_shape="rounded",
+                precision="float32",
+            )
+            return
+
+        if not self.show_unreachable.value:
+            return
+
+        visible_mask = layer_ri <= 0.0
+        if not np.any(visible_mask):
+            return
+
+        visible_points = layer_points[visible_mask]
+        unit_vertices, unit_faces = self._build_unit_icosahedron_mesh()
+        sphere_scales = np.full((visible_points.shape[0],), self._scan_point_size * 0.35, dtype=np.float32)
+        sphere_wxyzs = np.tile(np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32), (visible_points.shape[0], 1))
+        handle_map[layer_z] = self.server.scene.add_batched_meshes_simple(
+            f"/workspace/ri_voxels_unreachable/{layer_z:.8f}",
+            unit_vertices,
+            unit_faces,
+            sphere_wxyzs,
+            visible_points.astype(np.float32),
+            batched_scales=sphere_scales,
+            batched_colors=(170, 170, 170),
+            batched_opacities=np.full((visible_points.shape[0],), 0.22, dtype=np.float32),
+            opacity=1.0,
+            material="standard",
+            flat_shading=False,
+            cast_shadow=False,
+            receive_shadow=False,
+        )
 
     def _refresh_workspace_render(self) -> None:
         if self._scan_voxel_arr is None or self._scan_voxel_ri_arr is None:
             return
 
-        voxel_arr = self._scan_voxel_arr
-        voxel_ri_arr = self._scan_voxel_ri_arr
-        render_mask = np.ones((voxel_arr.shape[0],), dtype=bool)
+        visible_layers = self._get_visible_layer_keys()
+        visible_layer_set = set(visible_layers)
 
-        if self.enable_z_slice.value:
-            z_min = min(float(self.z_slice_min.value), float(self.z_slice_max.value))
-            z_max = max(float(self.z_slice_min.value), float(self.z_slice_max.value))
-            render_mask &= voxel_arr[:, 2] >= z_min
-            render_mask &= voxel_arr[:, 2] <= z_max
+        for kind in ("reachable", "unreachable"):
+            handle_map = self._layer_handles[kind]
+            for layer_z in list(handle_map.keys()):
+                should_keep = layer_z in visible_layer_set and not (kind == "unreachable" and not self.show_unreachable.value)
+                if should_keep:
+                    continue
+                try:
+                    handle_map[layer_z].remove()
+                except Exception:
+                    pass
+                del handle_map[layer_z]
 
-        filtered_points = voxel_arr[render_mask]
-        filtered_ri = voxel_ri_arr[render_mask]
+        for layer_z in visible_layers:
+            self._sync_layer_handle(layer_z, "reachable", True)
+            self._sync_layer_handle(layer_z, "unreachable", True)
 
-        self._clear_workspace_render()
+        visible_reachable_count = 0
+        visible_total_count = 0
+        for layer_z in visible_layers:
+            layer_indices = self._layer_groups.get(layer_z)
+            if layer_indices is None:
+                continue
+            layer_ri = self._scan_voxel_ri_arr[layer_indices]
+            visible_total_count += int(layer_ri.shape[0])
+            visible_reachable_count += int(np.count_nonzero(layer_ri > 0.0))
 
-        if filtered_points.shape[0] == 0:
+        if visible_total_count == 0:
             self.legend_html.content = self._build_legend_html("N/A (slice empty)")
-            return
-
-        reachable_mask = filtered_ri > 0.0
-        unreachable_mask = ~reachable_mask
-
-        reachable_points = filtered_points[reachable_mask]
-        reachable_ri = filtered_ri[reachable_mask]
-        unreachable_points = filtered_points[unreachable_mask]
-
-        if reachable_points.shape[0] > 0:
-            ri_min = float(np.min(reachable_ri))
-            ri_max = float(np.max(reachable_ri))
-            if ri_max - ri_min > 1e-8:
-                normalized_ri = (reachable_ri - ri_min) / (ri_max - ri_min)
-            else:
-                normalized_ri = np.zeros_like(reachable_ri, dtype=np.float32)
-
-            reachable_colors = self._viridis_colormap(normalized_ri)
-            self._reachable_handle = self.server.scene.add_point_cloud(
-                "/workspace/ri_voxels_reachable",
-                reachable_points,
-                reachable_colors,
-                point_size=self._scan_point_size,
-                point_shape="rounded",
-                precision="float32",
-            )
-            legend_range_text = f"{ri_min:.3f} to {ri_max:.3f}"
+        elif visible_reachable_count == 0:
+            self.legend_html.content = self._build_legend_html("N/A (no reachable voxels in view)")
         else:
-            legend_range_text = "N/A (no reachable voxels in view)"
-
-        if self.show_unreachable.value and unreachable_points.shape[0] > 0:
-            unit_vertices, unit_faces = self._build_unit_icosahedron_mesh()
-            sphere_scales = np.full((unreachable_points.shape[0],), self._scan_point_size * 0.35, dtype=np.float32)
-            sphere_wxyzs = np.tile(np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32), (unreachable_points.shape[0], 1))
-            self._unreachable_handle = self.server.scene.add_batched_meshes_simple(
-                "/workspace/ri_voxels_unreachable",
-                unit_vertices,
-                unit_faces,
-                sphere_wxyzs,
-                unreachable_points.astype(np.float32),
-                batched_scales=sphere_scales,
-                batched_colors=(170, 170, 170),
-                batched_opacities=np.full((unreachable_points.shape[0],), 0.22, dtype=np.float32),
-                opacity=1.0,
-                material="standard",
-                flat_shading=False,
-                cast_shadow=False,
-                receive_shadow=False,
-            )
-
-        self.legend_html.content = self._build_legend_html(legend_range_text)
+            self.legend_html.content = self._build_legend_html(f"{self._layer_color_min:.3f} to {self._layer_color_max:.3f} (global)")
 
     def _evaluate_position(self, target_position: np.ndarray, base_seed: np.ndarray):
         reachable_cfg = None
@@ -1139,8 +1432,7 @@ class WorkspaceReachabilityVisualizer:
             fixed_wxyz=self.fixed_wxyz,
             bounds=np.asarray(self.args.bounds, dtype=np.float64),
             step=float(self.args.step),
-            direction_samples=int(self.args.direction_samples),
-            roll_samples=int(self.args.roll_samples),
+            ori_samples=int(self.args.ori_samples),
             x_centers=xs,
             y_centers=ys,
             z_centers=zs,
@@ -1235,7 +1527,9 @@ class WorkspaceReachabilityVisualizer:
 
         self._scan_voxel_arr = voxel_arr
         self._scan_voxel_ri_arr = voxel_ri_arr
+        self._scan_step = float(self.args.step)
         self._scan_point_size = max(0.003, float(self.args.step) * float(self.args.point_size_scale))
+        self._prepare_workspace_layer_cache()
         if voxel_arr.shape[0] > 0:
             self._refresh_workspace_render()
 

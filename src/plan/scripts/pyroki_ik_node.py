@@ -134,7 +134,7 @@ class PyrokiIKNode(Node):
 
         # 初始 cfg：全 0
         #self.cfg = np.zeros(len(self.robot.joints.actuated_names))
-        self.cfg = np.array([0.0, -0.3, 0.0, 0.0, 0.0, 0.0])
+        self.cfg = np.array([0.0, 0.3, 0.0, 0.0, 0.0, 0.0])
         # 用于控制打印频率（每5秒打印一次）
         self.last_print_time = time.time()
 
