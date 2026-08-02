@@ -262,3 +262,19 @@ y方向不用调
 - 查看版本：which realsense-viewer(which会找可执行文件的精确名字); 或dpkg -l | grep -i 'librealsense\|realsense'
 - 打开rsviewer: realsense-viewer
 - 查看devices: rs-enumerate-devices
+
+
+
+hku@engineer:~/robo_arm$ git push
+Enumerating objects: 159, done.
+Counting objects: 100% (159/159), done.
+Delta compression using up to 16 threads
+Compressing objects: 100% (132/132), done.
+Writing objects: 100% (134/134), 111.78 MiB | 4.81 MiB/s, done.
+Total 134 (delta 57), reused 0 (delta 0), pack-reused 0
+remote: Resolving deltas: 100% (57/57), completed with 19 local objects.
+remote: warning: See https://gh.io/lfs for more information.
+remote: warning: File src/pose_gen/weights/hkust_best.pt is 56.54 MB; this is larger than GitHub's recommended maximum file size of 50.00 MB
+remote: warning: GH001: Large files detected. You may want to try Git Large File Storage - https://git-lfs.github.com.
+To https://github.com/HKUAstar/MoveIt-Engineer.git
+   15c20ac..257f90e  main -> main

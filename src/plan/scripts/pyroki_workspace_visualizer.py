@@ -87,9 +87,9 @@ def _import_pyroki_snippets():
 def _make_package_filename_handler():
     """Resolve package:// URDF resources by searching workspace install/source roots."""
     search_roots = [
-        "/home/hku/robo_arm/src/arms",
-        "/home/hku/robo_arm/src",
-        "/home/hku/robo_arm/install",
+        "src/arms",
+        "src",
+        "install",
     ]
     pkg_map = {}
     for root in search_roots:
@@ -115,10 +115,10 @@ _patch_numpy_asarray_copy_kwarg()
 
 URDF_PATH = os.environ.get(
     "ROBO_ARM_URDF",
-    "/home/hku/robo_arm/src/arms/combine_urdf/urdf/combine_urdf.urdf",
+    "src/arms/combine_urdf/urdf/combine_urdf.urdf",
 )
 EE_LINK = os.environ.get("ROBO_ARM_EE_LINK", "gripper")
-DEFAULT_OUTPUT_NPZ = "/home/hku/robo_arm/output/workspace_scan.npz"
+DEFAULT_OUTPUT_NPZ = "output/workspace_scan.npz"
 DEFAULT_CFG = np.array([0.0, 0.3, 0.0, 0.0, 0.0, 0.0])
 
 LOGGER = logging.getLogger("pyroki_workspace_visualizer")
@@ -133,7 +133,7 @@ def _parse_args() -> argparse.Namespace:
         nargs=6,
         type=float,
         metavar=("XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX"),
-        default=[-0.1, 1.5, -0.4, 1.2, 0.9, 1.8],
+        default=[-0.1, 1.6, -0.5, 1.2, 0.8, 1.9],
     )
     parser.add_argument(
         "--step",
