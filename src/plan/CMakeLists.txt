@@ -26,6 +26,7 @@ find_package(control_msgs REQUIRED)
 find_package(interactive_markers REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(robo_arm_msgs REQUIRED)
+find_package(geometric_shapes REQUIRED)
 
 # Include directories
 include_directories(include)
@@ -119,11 +120,13 @@ if(serial_FOUND)
   )
 
 add_executable(flow_with_pyroki src/flow_with_pyroki.cpp)
+target_link_libraries(flow_with_pyroki geometric_shapes::geometric_shapes)
 ament_target_dependencies(flow_with_pyroki
   rclcpp
   sensor_msgs
   std_msgs
   geometry_msgs
+  tf2_ros
   moveit_ros_planning_interface
   moveit_visual_tools
   moveit_msgs

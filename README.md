@@ -237,6 +237,10 @@ usually, use this order: source /opt/ros/jazzy/setup.bash; source /home/hku/ws_m
 - 突然出现了连之前能够规划成功的路径现在也无法规划成功的问题。对比了修改的东西，发现是删掉了一行srdf里link2和link3的碰撞检测。
 - 添加了一个脚本，绘制可达工作空间
 
+**Aug 3**
+- 如果规划有问题，查看srdf里的joint_limits和kinematics.yaml
+- sw导出stl可以选的坐标系和是否作为一个文件导出
+- flow_with_pyroki可以通过查看logger看MoveIt pose reference frame和MoveIt planning frame,在moveit_config的.rviz文件里看fixed frame
 
 ### 路径配置
 如果工作目录不在 `/home/hku/robo_arm`，需要更新 `plan/CMakeLists.txt` 中的绝对路径
@@ -262,3 +266,17 @@ y方向不用调
 - 查看版本：which realsense-viewer(which会找可执行文件的精确名字); 或dpkg -l | grep -i 'librealsense\|realsense'
 - 打开rsviewer: realsense-viewer
 - 查看devices: rs-enumerate-devices
+
+
+
+source /opt/ros/jazzy/setup.bash
+source ~/ws_moveit/install/setup.bash
+source ~/robo_arm/install/setup.bash
+ros2 launch plan flow_with_pyroki.launch.py
+
+
+[move_group-2] [ERROR] [1785683540.151140124] [move_group.move_group.moveit.planners.ompl.planning_context_manager]: Unknown planner: 'geometric::BITstar'
+
+
+
+

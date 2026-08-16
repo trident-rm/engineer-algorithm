@@ -16,6 +16,7 @@
   <depend>geometry_msgs</depend>
   <depend>eigen3</depend>
   <depend>tf2_eigen</depend>
+  <depend>tf2_ros</depend>
   <depend>tools</depend>
   <depend>pinocchio</depend>
   <depend>control_msgs</depend>

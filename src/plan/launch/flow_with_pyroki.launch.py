@@ -1,22 +1,23 @@
-"""
-flow_with_pyroki.launch.py
-需要先在另一个终端跑:
-  python3 ./src/plan/scripts/pyroki_ik_node.py
-  ros2 launch plan pyroki_ik.launch.py
-然后:
-  ros2 launch plan flow_with_pyroki.launch.py
-键盘输入要在启动它的终端里, 焦点放上面按 w / q.
-"""
 import os
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess
+from launch.actions import TimerAction
 from launch_ros.actions import Node
 from moveit_configs_utils import MoveItConfigsBuilder
 from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
-    moveit_config = MoveItConfigsBuilder("robo_arm10", package_name="robo_arm10_moveit_config").to_moveit_configs()
+    moveit_config = MoveItConfigsBuilder(
+        "combine_urdf", package_name="combine_urdf_moveit_config"
+    ).to_moveit_configs()
+
+    world_to_chasis_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="world_to_chasis_tf",
+        output="screen",
+        arguments=["-0.1", "0", "0.142", "3.1415926", "0", "0", "world", "chasis_link"],
+    )
 
     robot_state_publisher = Node(
         package="robot_state_publisher",
@@ -42,12 +43,9 @@ def generate_launch_description():
         parameters=[moveit_config.to_dict(), {'use_sim_time': False}],
     )
 
-    rviz_config_file = os.path.join(
-        get_package_share_directory("robo_arm10_moveit_config"),
-        "config",
-        "moveit.rviz",
-    )
 
+    rviz_config_file = "./src/arms/combine_urdf_moveit_config/config/moveit.rviz"
+ 
     rviz = Node(
         package="rviz2",
         executable="rviz2",
@@ -78,11 +76,12 @@ def generate_launch_description():
             {'use_sim_time': False}
         ],
     )
+
     return LaunchDescription([
+        world_to_chasis_tf,
         robot_state_publisher,
         # joint_state_publisher,
         move_group_node,
-        flow_with_pyroki_node,
         rviz,
-    
+        flow_with_pyroki_node,
     ])

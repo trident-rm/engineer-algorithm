@@ -1,4 +1,5 @@
-planning_plugin: ompl_interface/OMPLPlanner
+planning_plugins:
+  - ompl_interface/OMPLPlanner
 request_adapters:
   - default_planning_request_adapters/ResolveConstraintFrames
   - default_planning_request_adapters/ValidateWorkspaceBounds
@@ -12,10 +13,13 @@ response_adapters:
 planner_configs:
   BITstar:
     type: geometric::BITstar
+  RRTConnect:
+    type: geometric::RRTConnect
 
 arm:
-  default_planner_config: BITstar
+  default_planner_config: RRTConnect
   planner_configs:
     - BITstar
+    - RRTConnect
   projection_evaluator: joints(joint1,joint2)
   longest_valid_segment_fraction: 0.005

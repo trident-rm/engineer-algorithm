@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="reduced_ground">
+  <link
+    name="ground_link">
+    <inertial>
+      <origin
+        xyz="-0.869074740514908 -0.1583606330783 0.759941854739792"
+        rpy="0 0 0" />
+      <mass
+        value="1.07408917362392E-12" />
+      <inertia
+        ixx="0"
+        ixy="0"
+        ixz="0"
+        iyy="0"
+        iyz="0"
+        izz="0" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://reduced_ground/meshes/ground_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 0.949019607843137 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://reduced_ground/meshes/ground_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+</robot>

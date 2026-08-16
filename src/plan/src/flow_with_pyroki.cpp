@@ -8,27 +8,117 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <string>
 #include <thread>
 #include <vector>
+#include <boost/variant/get.hpp>
 #include <geometry_msgs/msg/pose.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+#include <geometric_shapes/mesh_operations.h>
+#include <geometric_shapes/shape_operations.h>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/clock.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <moveit/move_group_interface/move_group_interface.hpp>
+#include <moveit/planning_scene_interface/planning_scene_interface.hpp>
 #include <moveit_visual_tools/moveit_visual_tools.h>
 #include <moveit/kinematic_constraints/utils.hpp>
+#include <moveit_msgs/action/move_group.hpp>
+#include <moveit_msgs/msg/collision_object.hpp>
 #include <moveit_msgs/msg/move_it_error_codes.hpp>
+#include <moveit_msgs/srv/get_planning_scene.hpp>
 #include <moveit_msgs/srv/get_position_ik.hpp>
 #include <robo_arm_msgs/msg/plane_frame.hpp>
+#include <shape_msgs/msg/mesh.hpp>
+#include <tf2_ros/transform_broadcaster.h>
+
+namespace
+{
+std::string toFileUri(const std::filesystem::path& path)
+{
+    return "file://" + path.string();
+}
+
+geometry_msgs::msg::Pose makePose(double x, double y, double z, double qx = 0.0, double qy = 0.0, double qz = 0.0, double qw = 1.0)
+{
+    geometry_msgs::msg::Pose pose;
+    pose.position.x = x;
+    pose.position.y = y;
+    pose.position.z = z;
+    pose.orientation.x = qx;
+    pose.orientation.y = qy;
+    pose.orientation.z = qz;
+    pose.orientation.w = qw;
+    return pose;
+}
+
+moveit_msgs::msg::CollisionObject makeCollisionObject(
+    const std::string& id,
+    const std::string& mesh_resource,
+    const std::string& frame_id,
+    const geometry_msgs::msg::Pose& pose)
+{
+    moveit_msgs::msg::CollisionObject object;
+    object.header.frame_id = frame_id;
+    object.id = id;
+    object.operation = moveit_msgs::msg::CollisionObject::ADD;
+
+    std::unique_ptr<shapes::Mesh> mesh(shapes::createMeshFromResource(mesh_resource));
+    if (!mesh) {
+        throw std::runtime_error("Failed to load mesh resource: " + mesh_resource);
+    }
+
+    shapes::ShapeMsg shape_msg;
+    if (!shapes::constructMsgFromShape(mesh.get(), shape_msg)) {
+        throw std::runtime_error("Failed to convert mesh to message: " + mesh_resource);
+    }
+
+    object.meshes.push_back(boost::get<shape_msgs::msg::Mesh>(shape_msg));
+    object.mesh_poses.push_back(pose);
+    return object;
+}
+
+geometry_msgs::msg::Pose randomPillarPoseInRange()
+{
+    static thread_local std::mt19937 rng(std::random_device{}());
+    static std::uniform_real_distribution<double> x_dist(-0.85, -0.75);
+    static std::uniform_real_distribution<double> y_dist(-0.05, 0.05);
+    static std::uniform_real_distribution<double> z_dist(0.5, 0.6);
+    static std::uniform_real_distribution<double> roll_dist(-M_PI/6, M_PI/6);
+    static std::uniform_real_distribution<double> pitch_dist(-M_PI/6, M_PI/6);
+    static std::uniform_real_distribution<double> yaw_dist(-M_PI/3, M_PI/3);
+
+    const double roll = roll_dist(rng);
+    const double pitch = pitch_dist(rng);
+    const double yaw = yaw_dist(rng);
+
+    const Eigen::AngleAxisd roll_aa(roll, Eigen::Vector3d::UnitX());
+    const Eigen::AngleAxisd pitch_aa(pitch, Eigen::Vector3d::UnitY());
+    const Eigen::AngleAxisd yaw_aa(yaw, Eigen::Vector3d::UnitZ());
+    Eigen::Quaterniond q = yaw_aa * pitch_aa * roll_aa;
+    q.normalize();
+
+    return makePose(
+        x_dist(rng),
+        y_dist(rng),
+        z_dist(rng),
+        q.x(),
+        q.y(),
+        q.z(),
+        q.w());
+}
+}  // namespace
 
 //状态机demo的虚假变量
 static const geometry_msgs::msg::Pose fake_hover_pose = []() {
@@ -47,6 +137,12 @@ static const geometry_msgs::msg::Pose fake_hover_pose = []() {
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("flow_with_pyroki");
 static const std::string PLANNING_GROUP = "arm";
 static const double STEP = 0.01;
+static const std::string WORLD_FRAME = "world";
+static const std::string GROUND_FRAME = "reduced_ground_frame";
+static const std::string PILLAR_FRAME = "reduced_pillar_frame";
+static std::mutex g_env_pose_mutex;
+static geometry_msgs::msg::Pose g_ground_pose = makePose(0.0, 0.0, 0.0);
+static geometry_msgs::msg::Pose g_pillar_pose = makePose(-0.8, 0.0, 0.55);
 static const std::vector<std::string> JOINT_NAMES = {
     "joint1","joint2","joint3","joint4","joint5","joint6"};
 static const std::vector<double> energy_unit_1 = {
@@ -199,7 +295,7 @@ static geometry_msgs::msg::Pose g_hover_pose = [](){
 static std::mutex g_js_mutex;
 
 //关节角度的全局变量
-static std::vector<double> g_arm_state(6, 0.0);           // 当前发布状态
+static std::vector<double> g_arm_state = {0.0, 0.3, 0.0, 0.0, 0.0, 0.0};           // 当前发布状态
 //static std::vector<double> g_last_state(6, 0.0);       // g_arm_state上一刻的状态
 //static std::vector<double> g_real_arm_state(6, 0.0);      // 实际状态 (在仿真里和/joint_states一样, 但在真实环境里是读取串口的数据)
 static std::vector<double> g_ctrl_js(6, 0.0);
@@ -226,6 +322,60 @@ static char g_last_key = 0;
 
 // pyroki 状态接收标志
 static std::atomic<bool> g_got_pyroki_state(false);
+
+static void publishEnvironmentTF(
+    const rclcpp::Node::SharedPtr& node,
+    const std::shared_ptr<tf2_ros::TransformBroadcaster>& tf_broadcaster)
+{
+    geometry_msgs::msg::Pose ground_pose_snapshot;
+    geometry_msgs::msg::Pose pillar_pose_snapshot;
+    {
+        std::lock_guard<std::mutex> lk(g_env_pose_mutex);
+        ground_pose_snapshot = g_ground_pose;
+        pillar_pose_snapshot = g_pillar_pose;
+    }
+
+    geometry_msgs::msg::TransformStamped ground_tf;
+    ground_tf.header.stamp = node->now();
+    ground_tf.header.frame_id = WORLD_FRAME;
+    ground_tf.child_frame_id = GROUND_FRAME;
+    ground_tf.transform.translation.x = ground_pose_snapshot.position.x;
+    ground_tf.transform.translation.y = ground_pose_snapshot.position.y;
+    ground_tf.transform.translation.z = ground_pose_snapshot.position.z;
+    ground_tf.transform.rotation = ground_pose_snapshot.orientation;
+
+    geometry_msgs::msg::TransformStamped pillar_tf;
+    pillar_tf.header.stamp = ground_tf.header.stamp;
+    pillar_tf.header.frame_id = WORLD_FRAME;
+    pillar_tf.child_frame_id = PILLAR_FRAME;
+    pillar_tf.transform.translation.x = pillar_pose_snapshot.position.x;
+    pillar_tf.transform.translation.y = pillar_pose_snapshot.position.y;
+    pillar_tf.transform.translation.z = pillar_pose_snapshot.position.z;
+    pillar_tf.transform.rotation = pillar_pose_snapshot.orientation;
+
+    tf_broadcaster->sendTransform(ground_tf);
+    tf_broadcaster->sendTransform(pillar_tf);
+}
+
+static bool updatePillarCollisionObjectInPlanningScene(const geometry_msgs::msg::Pose& pillar_pose)
+{
+    try {
+        const std::filesystem::path workspace_root = "/home/hku/robo_arm/src/arms";
+        const std::filesystem::path pillar_mesh = workspace_root / "reduced_pillar/meshes/pillar_link.STL";
+
+        moveit::planning_interface::PlanningSceneInterface planning_scene_interface;
+        const auto pillar_object = makeCollisionObject(
+            "reduced_pillar",
+            toFileUri(pillar_mesh),
+            WORLD_FRAME,
+            pillar_pose);
+        planning_scene_interface.applyCollisionObject(pillar_object);
+        return true;
+    } catch (const std::exception& ex) {
+        RCLCPP_WARN(LOGGER, "Failed to update reduced_pillar collision object: %s", ex.what());
+        return false;
+    }
+}
 
 enum class ControlMode {
     Idle,       // 全局空闲态：不执行任何动作
@@ -933,39 +1083,52 @@ private:
                     //     g_q_vector,
                     //     g_p_vector,
                     //     g_up_vector);
-                    g_hover_pose = fake_hover_pose;
+                    
+                    const geometry_msgs::msg::Pose new_pillar_pose = randomPillarPoseInRange();
+                    {
+                        std::lock_guard<std::mutex> lk(g_env_pose_mutex);
+                        g_pillar_pose = new_pillar_pose;
+                    }
+                    if (!updatePillarCollisionObjectInPlanningScene(new_pillar_pose)) {
+                        RCLCPP_WARN(LOGGER, "Save demo: pillar TF moved but planning scene collision object update failed.");
+                    }
+
                     g_plane_center = {
-                        fake_hover_pose.position.x,
-                        fake_hover_pose.position.y,
-                        fake_hover_pose.position.z,
+                        new_pillar_pose.position.x,
+                        new_pillar_pose.position.y,
+                        new_pillar_pose.position.z,
                     };
                     Eigen::Quaterniond hover_quat(
-                        fake_hover_pose.orientation.w,
-                        fake_hover_pose.orientation.x,
-                        fake_hover_pose.orientation.y,
-                        fake_hover_pose.orientation.z);
+                        new_pillar_pose.orientation.w,
+                        new_pillar_pose.orientation.x,
+                        new_pillar_pose.orientation.y,
+                        new_pillar_pose.orientation.z);
+
                     hover_quat.normalize();
                     const Eigen::Matrix3d hover_rot = hover_quat.toRotationMatrix();
                     g_q_vector = to_std_vector(-hover_rot.col(0));
                     g_p_vector = to_std_vector(-hover_rot.col(1));
                     g_up_vector = to_std_vector(hover_rot.col(2));
-                    RCLCPP_INFO(LOGGER, "Skip plane calculation in Save demo. Using fake_hover_pose and hover-pose-derived axes.");
+                    RCLCPP_INFO(LOGGER,
+                        "Save demo: randomized pillar pose to (%.3f, %.3f, %.3f) and updated hover pose position.",
+                        new_pillar_pose.position.x,
+                        new_pillar_pose.position.y,
+                        new_pillar_pose.position.z);
                     wait_for_enter_key(); //等待N键
                     save_substate_ = SaveSubState::Hover;
                     break;
                 }
 
                 case SaveSubState::Hover: {
-                    // Demo mode: keep the preconfigured fake hover pose.
-                    // if (!calculate_hover_pose()) {
-                    //     RCLCPP_WARN(LOGGER, "Hover pose calculation failed. Save flow stopped and switched to Idle.");
-                    //     save_substate_ = SaveSubState::CalPlane;
-                    //     mode_ = ControlMode::Idle;
-                    //     break;
-                    // }
-                    g_hover_pose = fake_hover_pose;
+                    // Demo mode: hover pose is derived from the randomized pillar pose/axes.
+                    if (!calculate_hover_pose()) {
+                        RCLCPP_WARN(LOGGER, "Hover pose calculation failed. Save flow stopped and switched to Idle.");
+                        save_substate_ = SaveSubState::CalPlane;
+                        mode_ = ControlMode::Idle;
+                        break;
+                    }
                     publish_hover_pose_visualization(g_hover_pose);
-                    RCLCPP_INFO(LOGGER, "Skip hover pose calculation in Save demo. Using fake_hover_pose.");
+                    RCLCPP_INFO(LOGGER, "Save demo: hover pose calculated from randomized pillar pose.");
 
                     wait_for_enter_key();
                     if (!get_energy_unit(0)) {
@@ -1637,7 +1800,7 @@ private:
             const std::string& ns)
         {
             visualization_msgs::msg::Marker marker;
-            marker.header.frame_id = "base_link";
+            marker.header.frame_id = "world";
             marker.header.stamp = stamp;
             marker.ns = ns;
             marker.id = id;
@@ -1665,7 +1828,7 @@ private:
         };
 
         visualization_msgs::msg::Marker pose_marker;
-        pose_marker.header.frame_id = "base_link";
+        pose_marker.header.frame_id = "world";
         pose_marker.header.stamp = stamp;
         pose_marker.ns = "hover_pose";
         pose_marker.id = 90;
@@ -1909,66 +2072,6 @@ private:
             mg_->clearPoseTargets();
             return false;
         }
-
-        // 设置目标朝向容差（相比save_pose更严格的朝向约束）
-        //mg_->setGoalOrientationTolerance(0.02);  // ~1.15度容差
-
-        /** 
-        // 尝试规划，如果失败则在目标x、y坐标范围内迭代搜索
-        const double SEARCH_RADIUS = 0.15;  // 15cm范围
-        const int MAX_ATTEMPTS = 10;
-        
-        geometry_msgs::msg::Pose original_target = target_pose;
-        moveit::planning_interface::MoveGroupInterface::Plan plan;
-        moveit::core::MoveItErrorCode rc = moveit::core::MoveItErrorCode::PLANNING_FAILED;
-        
-        for (int attempt = 0; attempt < MAX_ATTEMPTS; ++attempt) {
-            mg_->setPoseTarget(target_pose, mg_->getEndEffectorLink());
-            //mg_ -> setPose
-            rc = mg_->plan(plan);
-            
-            if (rc == moveit::core::MoveItErrorCode::SUCCESS) {
-                auto trajectory_data = extractTrajectory(plan.trajectory);  
-                if (appendTrajectoryToFile(trajectory_data)) {
-                    RCLCPP_INFO(LOGGER,
-                        "Trajectory data written to /tmp/flow_with_pyroki_trajectory.log");
-                } else {
-                    RCLCPP_WARN(LOGGER,
-                        "Failed to write trajectory data to /tmp/flow_with_pyroki_trajectory.log");
-                }
-                RCLCPP_INFO(LOGGER, "Plan to energy_unit_%d succeeded at attempt %d", unit_id, attempt + 1);
-                break;
-            }
-            
-            // 如果失败，在目标的x、y坐标范围内尝试邻近位置
-            if (attempt < MAX_ATTEMPTS - 1) {
-                // 使用网格搜索：在x、y方向各尝试多个偏移 (3x3网格 = 9种位置)
-                int grid_index = attempt % 9;
-                double offset_x = ((grid_index % 3) - 1) * SEARCH_RADIUS / 2;  // [-0.075, 0, 0.075]
-                double offset_y = ((grid_index / 3) - 1) * SEARCH_RADIUS / 2;  // [-0.075, 0, 0.075]
-                
-                target_pose.position.x = original_target.position.x + offset_x;
-                target_pose.position.y = original_target.position.y + offset_y;
-                target_pose.position.z = original_target.position.z;
-                target_pose.orientation = original_target.orientation;
-                
-                RCLCPP_WARN(LOGGER, "Plan to energy_unit_%d failed at attempt %d, trying nearby position (offset: %.3f, %.3f)", 
-                    unit_id, attempt + 1, offset_x, offset_y);
-            }
-            
-        }
-        
-        if (rc != moveit::core::MoveItErrorCode::SUCCESS) {
-            RCLCPP_WARN(LOGGER, "Plan to energy_unit_%d failed after %d attempts (code=%d, error='%s', message='%s', source='%s')",   
-                unit_id,
-                MAX_ATTEMPTS,
-                static_cast<int>(rc.val),  
-                moveit::core::errorCodeToString(rc).c_str(),  
-                rc.message.c_str(),  
-                rc.source.c_str());  
-            return;
-        }
-        */
         
         vt_->deleteAllMarkers();
         vt_->publishTrajectoryLine(plan.trajectory, jmg_->getLinkModel(mg_->getEndEffectorLink()), jmg_);
@@ -2195,9 +2298,10 @@ int main(int argc, char** argv)
     auto js_pub = node->create_publisher<sensor_msgs::msg::JointState>("/joint_states", 10);
     auto marker_pub = node->create_publisher<visualization_msgs::msg::MarkerArray>("/turn_vectors", 10);
     auto plane_pub = node->create_publisher<visualization_msgs::msg::MarkerArray>("/plane_visualization", 10);
+    auto tf_broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(node);
 
-    rclcpp::SubscriptionOptions ctrl_sub_opts;
-    ctrl_sub_opts.callback_group = io_cb_group;
+    rclcpp::SubscriptionOptions io_sub_opts;
+    io_sub_opts.callback_group = io_cb_group;
 
     auto ctrl_sub = node->create_subscription<sensor_msgs::msg::JointState>(
         "/pyroki_joint_states", 10,
@@ -2214,7 +2318,7 @@ int main(int argc, char** argv)
                 g_got_pyroki_state = true;
             }
         },
-        ctrl_sub_opts);
+        io_sub_opts);
 
     auto marker_plane_sub = node->create_subscription<robo_arm_msgs::msg::PlaneFrame>(
         "/marker_reco/filtered/plane", 10,
@@ -2223,7 +2327,7 @@ int main(int argc, char** argv)
                 g_state_machine->on_plane_frame(msg);
             }
         },
-        ctrl_sub_opts);
+        io_sub_opts);
 
     // 先启动 /joint_states 发布，再初始化 MoveGroup，避免启动期拿不到当前状态。
     auto pub_timer = node->create_wall_timer(
@@ -2242,13 +2346,55 @@ int main(int argc, char** argv)
         },
         io_cb_group);
 
-
     // 初始化MoveIt
     auto mg = std::make_shared<moveit::planning_interface::MoveGroupInterface>(node, PLANNING_GROUP);
+    // mg->setPoseReferenceFrame("base_link");
     mg->setEndEffectorLink("gripper");
     mg->setPlanningPipelineId("ompl");
-    mg->setPlannerId("BITstar");
-    RCLCPP_INFO(LOGGER, "MoveIt planner: pipeline=ompl, planner=BITstar");
+    mg->setPlannerId("RRTConnect");
+    mg->setPoseReferenceFrame("world");
+    RCLCPP_INFO(LOGGER, "MoveIt pose reference frame: %s", mg->getPoseReferenceFrame().c_str());
+    RCLCPP_INFO(LOGGER, "MoveIt planning frame: %s", mg->getPlanningFrame().c_str());
+
+    auto env_tf_timer = node->create_wall_timer(
+        std::chrono::milliseconds(50),
+        [node, tf_broadcaster]() {
+            publishEnvironmentTF(node, tf_broadcaster);
+        },
+        io_cb_group);
+    publishEnvironmentTF(node, tf_broadcaster);
+    
+    try {
+        const std::filesystem::path workspace_root = "/home/hku/robo_arm/src/arms";
+        const std::filesystem::path ground_mesh = workspace_root / "reduced_ground/meshes/ground_link.STL";
+        const std::filesystem::path pillar_mesh = workspace_root / "reduced_pillar/meshes/pillar_link.STL";
+
+        geometry_msgs::msg::Pose ground_pose_snapshot;
+        geometry_msgs::msg::Pose pillar_pose_snapshot;
+        {
+            std::lock_guard<std::mutex> lk(g_env_pose_mutex);
+            ground_pose_snapshot = g_ground_pose;
+            pillar_pose_snapshot = g_pillar_pose;
+        }
+
+        moveit::planning_interface::PlanningSceneInterface planning_scene_interface;
+        std::vector<moveit_msgs::msg::CollisionObject> collision_objects;
+        collision_objects.push_back(makeCollisionObject(
+            "reduced_ground",
+            toFileUri(ground_mesh),
+            WORLD_FRAME,
+            ground_pose_snapshot));
+        collision_objects.push_back(makeCollisionObject(
+            "reduced_pillar",
+            toFileUri(pillar_mesh),
+            WORLD_FRAME,
+            pillar_pose_snapshot));
+        planning_scene_interface.applyCollisionObjects(collision_objects);
+        RCLCPP_INFO(LOGGER, "Added reduced_ground and reduced_pillar as collision objects to planning scene");
+    } catch (const std::exception& ex) {
+        RCLCPP_WARN(LOGGER, "Failed to add environment collision objects: %s", ex.what());
+    }
+
     // const auto* jmg = mg->getRobotModel()->getJointModelGroup(PLANNING_GROUP);
     const moveit::core::JointModelGroup* jmg =
         mg->getCurrentState()->getJointModelGroup(PLANNING_GROUP);
@@ -2256,9 +2402,6 @@ int main(int argc, char** argv)
         node, "base_link", "flow_with_pyroki", mg->getRobotModel());
     vt->deleteAllMarkers();
 
-    // 等待初始状态
-    
-    
     // 初始化状态机
     g_state_machine = std::make_unique<ControlStateMachine>(node, mg, jmg, vt, js_pub, marker_pub, plane_pub);
     g_state_machine->start();
