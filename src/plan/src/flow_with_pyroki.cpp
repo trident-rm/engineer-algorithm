@@ -97,7 +97,7 @@ geometry_msgs::msg::Pose randomPillarPoseInRange()
     static std::uniform_real_distribution<double> z_dist(0.5, 0.6);
     static std::uniform_real_distribution<double> roll_dist(-M_PI/6, M_PI/6);
     static std::uniform_real_distribution<double> pitch_dist(-M_PI/6, M_PI/6);
-    static std::uniform_real_distribution<double> yaw_dist(-M_PI/3, M_PI/3);
+    static std::uniform_real_distribution<double> yaw_dist(-M_PI/6, M_PI/6);
 
     const double roll = roll_dist(rng);
     const double pitch = pitch_dist(rng);
@@ -298,7 +298,7 @@ static std::mutex g_js_mutex;
 static std::vector<double> g_arm_state = {0.0, 0.3, 0.0, 0.0, 0.0, 0.0};           // 当前发布状态
 //static std::vector<double> g_last_state(6, 0.0);       // g_arm_state上一刻的状态
 //static std::vector<double> g_real_arm_state(6, 0.0);      // 实际状态 (在仿真里和/joint_states一样, 但在真实环境里是读取串口的数据)
-static std::vector<double> g_ctrl_js(6, 0.0);
+static std::vector<double> g_ctrl_js = {0.0, 0.3, 0.0, 0.0, 0.0, 0.0};
 
 //方向向量的全局变量
 static std::vector<double> g_p_vector = {0, 0, 1}; 
@@ -1098,17 +1098,17 @@ private:
                         new_pillar_pose.position.y,
                         new_pillar_pose.position.z,
                     };
-                    Eigen::Quaterniond hover_quat(
+                    Eigen::Quaterniond pillar_quat(
                         new_pillar_pose.orientation.w,
                         new_pillar_pose.orientation.x,
                         new_pillar_pose.orientation.y,
                         new_pillar_pose.orientation.z);
 
-                    hover_quat.normalize();
-                    const Eigen::Matrix3d hover_rot = hover_quat.toRotationMatrix();
-                    g_q_vector = to_std_vector(-hover_rot.col(0));
-                    g_p_vector = to_std_vector(-hover_rot.col(1));
-                    g_up_vector = to_std_vector(hover_rot.col(2));
+                    pillar_quat.normalize();
+                    const Eigen::Matrix3d pillar_rot = pillar_quat.toRotationMatrix();
+                    g_q_vector = to_std_vector(pillar_rot.col(0));
+                    g_p_vector = to_std_vector(pillar_rot.col(1));
+                    g_up_vector = to_std_vector(pillar_rot.col(2));
                     RCLCPP_INFO(LOGGER,
                         "Save demo: randomized pillar pose to (%.3f, %.3f, %.3f) and updated hover pose position.",
                         new_pillar_pose.position.x,
@@ -1145,6 +1145,7 @@ private:
                     }
 
                     wait_for_enter_key();
+                    // EE x-axis points opposite to q_vector; keep this consistent with calculate_hover_pose().
                     const std::vector<double> insert_dir = {-g_q_vector[0], -g_q_vector[1], -g_q_vector[2]};
                     geometry_msgs::msg::Pose insert_target_pose;
                     if (!build_incremental_target_pose(insert_dir, 0.2, insert_target_pose)) {
@@ -1366,7 +1367,7 @@ private:
             const std::string& ns)
         {
             visualization_msgs::msg::Marker marker;
-            marker.header.frame_id = "base_link";
+            marker.header.frame_id = "world";
             marker.header.stamp = stamp;
             marker.ns = ns;
             marker.id = id;
@@ -1404,7 +1405,7 @@ private:
         visualization_msgs::msg::MarkerArray marker_array;
 
         visualization_msgs::msg::Marker center_marker;
-        center_marker.header.frame_id = "base_link";
+        center_marker.header.frame_id = "world";
         center_marker.header.stamp = stamp;
         center_marker.ns = "plane_center";
         center_marker.id = 0;
@@ -1487,7 +1488,7 @@ private:
             const std::string& label)
         {
             visualization_msgs::msg::Marker marker;
-            marker.header.frame_id = "base_link";
+            marker.header.frame_id = "world";
             marker.header.stamp = node_->now();
             marker.ns = "turn_vectors";
             marker.id = id;
@@ -1550,7 +1551,7 @@ private:
         }
 
         visualization_msgs::msg::Marker points_marker;
-        points_marker.header.frame_id = "base_link";
+        points_marker.header.frame_id = "world";
         points_marker.header.stamp = node_->now();
         points_marker.ns = "turn_waypoints";
         points_marker.id = 10;
@@ -1712,7 +1713,7 @@ private:
             double length)
         {
             visualization_msgs::msg::Marker marker;
-            marker.header.frame_id = "base_link";
+            marker.header.frame_id = "world";
             marker.header.stamp = stamp;
             marker.ns = ns;
             marker.id = id;
@@ -1739,7 +1740,7 @@ private:
         };
 
         visualization_msgs::msg::Marker pose_marker;
-        pose_marker.header.frame_id = "base_link";
+        pose_marker.header.frame_id = "world";
         pose_marker.header.stamp = stamp;
         pose_marker.ns = ns;
         pose_marker.id = marker_id_base;
@@ -1952,7 +1953,7 @@ private:
         auto request = std::make_shared<moveit_msgs::srv::GetPositionIK::Request>();
         request->ik_request.group_name = PLANNING_GROUP;
         request->ik_request.ik_link_name = mg_->getEndEffectorLink();
-        request->ik_request.pose_stamped.header.frame_id = "base_link";
+        request->ik_request.pose_stamped.header.frame_id = "world";
         request->ik_request.pose_stamped.header.stamp = node_->now();
         request->ik_request.pose_stamped.pose = target_pose;
         request->ik_request.avoid_collisions = false;
@@ -2399,7 +2400,7 @@ int main(int argc, char** argv)
     const moveit::core::JointModelGroup* jmg =
         mg->getCurrentState()->getJointModelGroup(PLANNING_GROUP);
     auto vt = std::make_shared<moveit_visual_tools::MoveItVisualTools>(
-        node, "base_link", "flow_with_pyroki", mg->getRobotModel());
+        node, "world", "flow_with_pyroki", mg->getRobotModel());
     vt->deleteAllMarkers();
 
     // 初始化状态机

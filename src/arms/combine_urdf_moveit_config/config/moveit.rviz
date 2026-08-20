@@ -9,10 +9,9 @@ Panels:
         - /MarkerArray1
         - /MarkerArray1/Topic1
         - /MotionPlanning1
-        - /MotionPlanning1/Status1
         - /MotionPlanning1/Planning Request1
       Splitter Ratio: 0.5
-    Tree Height: 265
+    Tree Height: 311
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
@@ -40,6 +39,34 @@ Visualization Manager:
       Plane: XY
       Plane Cell Count: 10
       Reference Frame: <Fixed Frame>
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Enabled: false
+      Filter (blacklist): ""
+      Filter (whitelist): ""
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+      Marker Scale: 1
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: false
+      Tree:
+        {}
+      Update Interval: 0
+      Value: false
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /plane_visualization
       Value: true
     - Class: moveit_rviz_plugin/PlanningScene
       Enabled: true
@@ -109,39 +136,6 @@ Visualization Manager:
         Robot Alpha: 1
         Show Robot Collision: false
         Show Robot Visual: true
-      Value: true
-    - Class: rviz_default_plugins/TF
-      Enabled: false
-      Filter (blacklist): ""
-      Filter (whitelist): ""
-      Frame Timeout: 15
-      Frames:
-        All Enabled: true
-      Marker Scale: 1
-      Name: TF
-      Show Arrows: true
-      Show Axes: true
-      Show Names: false
-      Tree:
-        {}
-      Update Interval: 0
-      Value: false
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
-      Name: MarkerArray
-      Namespaces:
-        hover_pose: true
-        hover_pose_axis_x: true
-        hover_pose_axis_y: true
-        hover_pose_axis_z: true
-        target_energy_unit_ik: true
-        target_energy_unit_plan: true
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /plane_visualization
       Value: true
     - Acceleration_Scaling_Factor: 0.1
       Class: moveit_rviz_plugin/MotionPlanning
@@ -331,25 +325,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.1413004398345947
+      Distance: 1.6448019742965698
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.2876906394958496
-        Y: -0.015348820015788078
-        Z: 0.3619254231452942
+        X: -0.25190192461013794
+        Y: -0.015886178240180016
+        Z: 0.1499808430671692
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.39500004053115845
+      Pitch: 0.4899997115135193
       Target Frame: chasis_link
       Value: Orbit (rviz_default_plugins)
-      Yaw: 2.347046136856079
+      Yaw: 5.340229034423828
     Saved: ~
 Window Geometry:
   "":
@@ -358,14 +352,14 @@ Window Geometry:
     collapsed: false
   Displays:
     collapsed: false
-  Height: 965
+  Height: 1011
   Help:
     collapsed: false
   Hide Left Dock: false
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd00000001000000000000024b00000361fc0200000007fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000000000000000fb000000100044006900730070006c006100790073010000004200000195000000d200fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e006700000001db000001c80000000000000000fb0000000800480065006c0070000000029a0000006e0000007200fffffffb0000000a00560069006500770073000000012e000000b3000000b200fffffffb000000280020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000004a00fffffffbffffffff01000001dd000001c6000001bb00ffffff0000046d0000036100000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd00000001000000000000024b0000038ffc0200000007fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000000000000000fb000000100044006900730070006c0061007900730100000042000001c3000000d200fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e006700000001db000001c80000000000000000fb0000000800480065006c0070000000029a0000006e0000007200fffffffb0000000a00560069006500770073000000012e000000b3000000b200fffffffb000000280020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000001a0000001afbffffffff010000020b000001c6000001bb00ffffff0000052f0000038f00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
-  Width: 1726
-  X: 56
-  Y: 143
+  Width: 1920
+  X: 0
+  Y: 32

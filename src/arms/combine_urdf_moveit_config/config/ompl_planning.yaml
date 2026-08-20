@@ -15,12 +15,19 @@ planner_configs:
     type: geometric::BITstar
   RRTConnect:
     type: geometric::RRTConnect
+  BiTRRT:
+    type: geometric::BiTRRT
+  RRTstar:
+    type: geometric::RRTstar
+  PRMstar:
+    type: geometric::PRMstar
 
 arm:
   default_planner_config: RRTConnect
   planner_configs:
-    - BITstar
     - RRTConnect
     - RRTstar
+    - BiTRRT
+    - PRMstar
   projection_evaluator: joints(joint1,joint2)
   longest_valid_segment_fraction: 0.005
