@@ -94,7 +94,7 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
-          chasis_link:
+          chassis_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -173,7 +173,7 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
-          chasis_link:
+          chassis_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -263,7 +263,7 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
-          chasis_link:
+          chassis_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -341,7 +341,7 @@ Visualization Manager:
       Name: Current View
       Near Clip Distance: 0.009999999776482582
       Pitch: 0.4899997115135193
-      Target Frame: chasis_link
+      Target Frame: chassis_link
       Value: Orbit (rviz_default_plugins)
       Yaw: 5.340229034423828
     Saved: ~

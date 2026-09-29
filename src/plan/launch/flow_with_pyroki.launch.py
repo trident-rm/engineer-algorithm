@@ -11,12 +11,12 @@ def generate_launch_description():
         "combine_urdf", package_name="combine_urdf_moveit_config"
     ).to_moveit_configs()
 
-    world_to_chasis_tf = Node(
+    world_to_chassis_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
-        name="world_to_chasis_tf",
+        name="world_to_chassis_tf",
         output="screen",
-        arguments=["-0.1", "0", "0.142", "3.1415926", "0", "0", "world", "chasis_link"],
+        arguments=["-0.1", "0", "0.142", "3.1415926", "0", "0", "world", "chassis_link"],
     )
 
     robot_state_publisher = Node(
@@ -78,7 +78,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        world_to_chasis_tf,
+        world_to_chassis_tf,
         robot_state_publisher,
         # joint_state_publisher,
         move_group_node,

@@ -5,7 +5,7 @@
 <robot
   name="combine_urdf">
   <link
-    name="chasis_link">
+    name="chassis_link">
     <inertial>
       <origin
         xyz="0 0 0"
@@ -26,7 +26,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://combine_urdf/meshes/chasis_link.STL" />
+          filename="package://combine_urdf/meshes/chassis_link.STL" />
       </geometry>
       <material
         name="">
@@ -40,7 +40,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://combine_urdf/meshes/chasis_link.STL" />
+          filename="package://combine_urdf/meshes/chassis_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -91,7 +91,7 @@
       xyz="0.23371 0 0.088788"
       rpy="0 0 0.023499" />
     <parent
-      link="chasis_link" />
+      link="chassis_link" />
     <child
       link="base_link" />
     <axis

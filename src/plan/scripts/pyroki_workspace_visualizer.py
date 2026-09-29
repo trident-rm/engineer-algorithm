@@ -14,6 +14,7 @@ import time
 from typing import Any
 
 import numpy as np
+import trimesh
 import viser
 
 try:
@@ -111,6 +112,13 @@ def _make_package_filename_handler():
     return handler
 
 
+def _load_stl_mesh(path: str) -> trimesh.Trimesh:
+    mesh = trimesh.load_mesh(path, process=False)
+    if not isinstance(mesh, trimesh.Trimesh):
+        raise TypeError(f"Expected a triangle mesh at {path}, got {type(mesh).__name__}")
+    return mesh
+
+
 _patch_numpy_asarray_copy_kwarg()
 
 URDF_PATH = os.environ.get(
@@ -118,8 +126,15 @@ URDF_PATH = os.environ.get(
     "src/arms/combine_urdf/urdf/combine_urdf.urdf",
 )
 EE_LINK = os.environ.get("ROBO_ARM_EE_LINK", "gripper")
-DEFAULT_OUTPUT_NPZ = "output/workspace_scan.npz"
+DEFAULT_OUTPUT_NPZ = str(Path("output") / f"{Path(URDF_PATH).stem}.npz")
 DEFAULT_CFG = np.array([0.0, 0.3, 0.0, 0.0, 0.0, 0.0])
+GROUND_MESH_PATH = "src/arms/reduced_ground/meshes/ground_link.STL"
+PILLAR_MESH_PATH = "src/arms/reduced_pillar/meshes/pillar_link.STL"
+WORLD_TO_CHASSIS_POSITION = (-0.1, 0.0, 0.142)
+WORLD_TO_CHASSIS_WXYZ = (0.0, 0.0, 0.0, 1.0)
+WORLD_TO_GROUND_POSITION = (0.0, 0.0, 0.0)
+WORLD_TO_PILLAR_POSITION = (-0.8, 0.0, 0.55)
+D_PERCENTILE_LEVELS = np.arange(0.0, 101.0, 10.0, dtype=np.float32)
 
 LOGGER = logging.getLogger("pyroki_workspace_visualizer")
 
@@ -133,7 +148,7 @@ def _parse_args() -> argparse.Namespace:
         nargs=6,
         type=float,
         metavar=("XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX"),
-        default=[-0.1, 1.6, -0.5, 1.2, 0.8, 1.9],
+        default=[0.2, 0.3, 0, 0.1, 0.6, 0.7],
     )
     parser.add_argument(
         "--step",
@@ -164,13 +179,6 @@ def _parse_args() -> argparse.Namespace:
         "--ori-samples",
         type=int,
         default=256,
-    )
-    parser.add_argument(
-        "--fixed-wxyz",
-        nargs=4,
-        type=float,
-        metavar=("W", "X", "Y", "Z"),
-        default=None,
     )
     parser.add_argument(
         "--port",
@@ -248,7 +256,6 @@ class WorkspaceReachabilityVisualizer:
         self.last_ik_ori_err_rad = None
         self.nominal_ee_pos = np.zeros((3,), dtype=np.float64)
         self.nominal_ee_wxyz = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
-        self.fixed_wxyz = None
         self.orientation_candidates = []
         self._scan_thread = None
         self._loaded_scan_bundle = self._read_scan_bundle(args.input_npz) if args.input_npz else None
@@ -257,27 +264,66 @@ class WorkspaceReachabilityVisualizer:
         self._layer_handles: dict[str, dict[float, Any]] = {"reachable": {}, "unreachable": {}}
         self._layer_color_min = 0.0
         self._layer_color_max = 1.0
+        self._d_percentile_edges = np.linspace(0.0, 100.0, 11, dtype=np.float32)
         self._render_refresh_lock = threading.Lock()
         self._render_refresh_timer = None
         self._enable_target_interaction = self._loaded_scan_bundle is not None
-
         self.server = viser.ViserServer(port=args.port)
-        self.server.scene.add_grid("/ground", width=2, height=2)
+        self.server.scene.add_frame("/world", show_axes=False) #scene是ViserServer的一个属性，是一个类
+        self.server.scene.add_frame(
+            "/world/chassis_link",
+            position=WORLD_TO_CHASSIS_POSITION,
+            wxyz=WORLD_TO_CHASSIS_WXYZ,
+            show_axes=False,
+        )
+        self.server.scene.add_frame(
+            "/world/reduced_ground_frame",
+            position=WORLD_TO_GROUND_POSITION,
+            show_axes=False,
+        )
+        self.server.scene.add_frame(
+            "/world/reduced_pillar_frame",
+            position=WORLD_TO_PILLAR_POSITION,
+            show_axes=False,
+        )
+        self.server.scene.add_grid("/world/grid", width=2, height=2)
+        self.server.scene.add_mesh_trimesh(
+            "/world/reduced_ground_frame/mesh", _load_stl_mesh(GROUND_MESH_PATH)
+        )
+        self.server.scene.add_mesh_trimesh(
+            "/world/reduced_pillar_frame/mesh", _load_stl_mesh(PILLAR_MESH_PATH)
+        )
 
-        self.status_text = self.server.gui.add_text("Scan status", "Starting...", disabled=True)
-        self.summary_text = self.server.gui.add_text("Workspace summary", "Waiting...", disabled=True)
-        self.sample_count_text = self.server.gui.add_text("Sample count", "0", disabled=True)
-        self.ee_pose_text = None
-        if self._enable_target_interaction:
-            self.ee_pose_text = self.server.gui.add_text("Current EE pose", "Waiting...", disabled=True)
         self.legend_html = self.server.gui.add_html(self._build_legend_html("waiting for scan"))
         self.enable_z_slice = self.server.gui.add_checkbox("Enable Z slice", False)
         initial_bounds = self._get_initial_bounds()
         zmin_default = float(initial_bounds[4])
         zmax_default = float(initial_bounds[5])
         zstep = max(0.001, self._get_initial_step())
-        self.z_slice_min = self.server.gui.add_slider("Z slice min", zmin_default, zmax_default, zstep, zmin_default)
-        self.z_slice_max = self.server.gui.add_slider("Z slice max", zmin_default, zmax_default, zstep, zmax_default)
+        initial_point_size = max(0.003, self._get_initial_step() * float(self.args.point_size_scale))
+        self.point_size_slider = self.server.gui.add_slider(
+            "Voxel display size (m)",
+            0.005,
+            max(0.01, 1.2 * self._get_initial_step()),
+            max(0.001, 0.1 * self._get_initial_step()),
+            min(initial_point_size, max(0.01, 2.0 * self._get_initial_step())),
+        )
+        self.colormap_select = self.server.gui.add_dropdown(
+            "Reachable voxel color map",
+            options=("viridis", "rainbow"),
+            initial_value="viridis",
+        )
+        self.color_mode_select = self.server.gui.add_dropdown(
+            "D color mode",
+            options=("Continuous normalized", "D percentage bins"),
+            initial_value="Continuous normalized",
+        )
+        self.z_slice_min = self.server.gui.add_slider(
+            "Z slice min (chassis_link, m)", zmin_default, zmax_default, zstep, zmin_default
+        )
+        self.z_slice_max = self.server.gui.add_slider(
+            "Z slice max (chassis_link, m)", zmin_default, zmax_default, zstep, zmax_default
+        )
         self.show_unreachable = self.server.gui.add_checkbox("Show unreachable voxels", True)
 
         self._reachable_handle = None
@@ -286,13 +332,17 @@ class WorkspaceReachabilityVisualizer:
         self._scan_voxel_ri_arr = None
         self._scan_point_size = max(0.003, float(self.args.step) * float(self.args.point_size_scale))
 
+        #给分别给控件绑定了事件回调函数，on_update是Viser的一个事件绑定或回调注册的函数，_是惯用变量名，表示不使用这个参数（不写lambda的话应该接受event对象）
         self.enable_z_slice.on_update(lambda _: self._request_workspace_render_refresh())
         self.z_slice_min.on_update(lambda _: self._request_workspace_render_refresh())
         self.z_slice_max.on_update(lambda _: self._request_workspace_render_refresh())
         self.show_unreachable.on_update(lambda _: self._request_workspace_render_refresh())
+        self.point_size_slider.on_update(lambda _: self._update_point_size())
+        self.colormap_select.on_update(lambda _: self._update_colormap())
+        self.color_mode_select.on_update(lambda _: self._update_colormap())
 
         self.server.scene.add_frame(
-            "/workspace_reference",
+            "/world/chassis_link/workspace_reference",
             position=(0.0, 0.0, 0.0),
             wxyz=(1.0, 0.0, 0.0, 0.0),
             axes_length=0.12,
@@ -302,7 +352,6 @@ class WorkspaceReachabilityVisualizer:
         if self._loaded_scan_bundle is not None:
             self._initialize_robot_runtime()
             self._initialize_target_control()
-            self._start_ee_pose_printer()
             self._load_saved_scan(self._loaded_scan_bundle)
             return
 
@@ -314,14 +363,13 @@ class WorkspaceReachabilityVisualizer:
             return
 
         self.logger.info(
-            "Workspace scan ready: bounds=%s, step=%.3f m, fixed_wxyz=%s, orientation_candidates=%d",
+            "Workspace scan ready: bounds=%s, step=%.3f m, orientation_candidates=%d",
             args.bounds,
             args.step,
-            self.fixed_wxyz.tolist(),
             len(self.orientation_candidates),
         )
 
-        self._scan_thread = threading.Thread(target=self._run_scan, daemon=True)
+        self._scan_thread = threading.Thread(target=self._run_scan, daemon=True) #创建新线程，target为线程执行的目标函数，daemon=True表示守护线程，主线程退出时，守护线程也会退出。
         self._scan_thread.start()
 
     def _initialize_target_control(self) -> None:
@@ -331,7 +379,7 @@ class WorkspaceReachabilityVisualizer:
         ee_pos, ee_wxyz = self._fk_ee(self.cfg)
         if self.target_control is None:
             self.target_control = self.server.scene.add_transform_controls(
-                "/workspace_target",
+                "/world/chassis_link/workspace_target",
                 scale=0.15,
                 position=tuple(float(x) for x in ee_pos),
                 wxyz=tuple(float(x) for x in ee_wxyz),
@@ -461,7 +509,6 @@ class WorkspaceReachabilityVisualizer:
             return False
         pos, wxyz = self._parse_input_pose()
         if pos is None or wxyz is None:
-            self.status_text.value = "Input pose invalid"
             return False
 
         self._suppress_target_sync = True
@@ -500,7 +547,6 @@ class WorkspaceReachabilityVisualizer:
                     target_wxyz=target_wxyz,
                 )
             except Exception as exc:
-                self.status_text.value = "Target IK failed"
                 with self._pose_lock:
                     self.last_ik_pos_err_m = None
                     self.last_ik_ori_err_rad = None
@@ -512,7 +558,6 @@ class WorkspaceReachabilityVisualizer:
                 )
                 return
         except Exception as exc:
-            self.status_text.value = "Target IK failed"
             with self._pose_lock:
                 self.last_ik_pos_err_m = None
                 self.last_ik_ori_err_rad = None
@@ -535,42 +580,7 @@ class WorkspaceReachabilityVisualizer:
             self.last_ik_ori_err_rad = ori_err_rad
 
         self.viser_urdf.update_cfg(self.cfg)
-        self.status_text.value = (
-            f"Target IK ok: pos_err={pos_err:.4f} m, ori_err={np.rad2deg(ori_err_rad):.2f} deg"
-        )
-        if self.ee_pose_text is not None:
-            self.ee_pose_text.value = f"pos={ee_pos.tolist()} wxyz={ee_wxyz.tolist()}"
         self._sync_inputs_from_target_control()
-
-    def _start_ee_pose_printer(self) -> None:
-        if self._stop_event.is_set() or not self._enable_target_interaction or self.ee_pose_text is None:
-            return
-
-        thread = threading.Thread(target=self._print_ee_pose_loop, daemon=True)
-        thread.start()
-
-    def _print_ee_pose_loop(self) -> None:
-        last_print = 0.0
-        while not self._stop_event.is_set():
-            now = time.time()
-            if now - last_print >= 1.0:
-                with self._pose_lock:
-                    cfg = np.array(self.cfg, dtype=np.float64, copy=True)
-                    pos_err = self.last_ik_pos_err_m
-                    ori_err_rad = self.last_ik_ori_err_rad
-                ee_pos, ee_wxyz = self._fk_ee(cfg)
-                if self.ee_pose_text is not None:
-                    self.ee_pose_text.value = f"pos={ee_pos.tolist()} wxyz={ee_wxyz.tolist()}"
-                if pos_err is not None and ori_err_rad is not None:
-                    err_text = f" ik_pos_err_m={pos_err:.6f} ik_ori_err_deg={np.rad2deg(ori_err_rad):.4f}"
-                else:
-                    err_text = " ik_pos_err_m=N/A ik_ori_err_deg=N/A"
-                print(
-                    f"[workspace_visualizer] ee_pos={ee_pos.tolist()} ee_wxyz={ee_wxyz.tolist()}{err_text}",
-                    flush=True,
-                )
-                last_print = now
-            self._stop_event.wait(0.1)
 
     def _initialize_robot_runtime(self) -> None:
         if pk is None:
@@ -595,8 +605,6 @@ class WorkspaceReachabilityVisualizer:
         self.logger.info("pyroki actuated joints: %s", self.pk_joint_names)
 
         self.nominal_ee_pos, self.nominal_ee_wxyz = self._fk_ee(self.cfg)
-        self.fixed_wxyz = self._resolve_fixed_wxyz(self.args.fixed_wxyz)
-
         self._initialize_robot_visual()
 
     def _initialize_robot_visual(self) -> None:
@@ -615,7 +623,11 @@ class WorkspaceReachabilityVisualizer:
             )
 
         if self.viser_urdf is None:
-            self.viser_urdf = ViserUrdf(self.server, urdf_or_path=self.urdf)
+            self.viser_urdf = ViserUrdf(
+                self.server,
+                urdf_or_path=self.urdf,
+                root_node_name="/world/chassis_link/robot",
+            )
 
         self.viser_urdf.update_cfg(self.cfg)
 
@@ -658,7 +670,6 @@ class WorkspaceReachabilityVisualizer:
                 "bounds": np.asarray(bundle["bounds"], dtype=np.float64) if "bounds" in bundle else None,
                 "step": float(bundle["step"]) if "step" in bundle else float(self.args.step),
                 "ori_samples": int(bundle["ori_samples"]) if "ori_samples" in bundle else None,
-                "fixed_wxyz": np.asarray(bundle["fixed_wxyz"], dtype=np.float64) if "fixed_wxyz" in bundle else None,
             }
 
         if data["voxel_points"].ndim != 2 or data["voxel_points"].shape[1] != 3:
@@ -684,7 +695,6 @@ class WorkspaceReachabilityVisualizer:
         self._scan_voxel_ri_arr = voxel_ri_arr
         self._scan_step = float(bundle.get("step", self.args.step))
         self._scan_point_size = max(0.003, float(bundle["step"]) * float(self.args.point_size_scale))
-        self.fixed_wxyz = bundle.get("fixed_wxyz")
         self._prepare_workspace_layer_cache()
 
         if voxel_arr.shape[0] > 0:
@@ -712,20 +722,8 @@ class WorkspaceReachabilityVisualizer:
             f"loaded saved scan: reachable={reachable_count}/{total} ({success_rate:.1f}%)"
             f"{pose_summary}{orientation_summary}"
         )
-        self.status_text.value = "Saved scan loaded"
-        self.summary_text.value = summary
-        self.sample_count_text.value = str(total)
         self.logger.info("Reloaded saved workspace scan from %s", bundle["path"])
         self.logger.info(summary)
-
-    def _resolve_fixed_wxyz(self, fixed_wxyz_arg):
-        if fixed_wxyz_arg is None:
-            return np.array(self.nominal_ee_wxyz, dtype=np.float64, copy=True)
-        fixed_wxyz = np.array(fixed_wxyz_arg, dtype=np.float64)
-        norm = float(np.linalg.norm(fixed_wxyz))
-        if norm < 1e-8:
-            raise ValueError("fixed quaternion norm is zero")
-        return fixed_wxyz / norm
 
     @staticmethod
     def _normalize_unit_quaternions(quaternions: np.ndarray) -> np.ndarray:
@@ -927,7 +925,7 @@ class WorkspaceReachabilityVisualizer:
 
         unit_vertices, unit_faces = self._build_unit_uv_sphere_mesh()
         self.server.scene.add_mesh_simple(
-            "/orientation_demo/sphere",
+            "/world/chassis_link/orientation_demo/sphere",
             unit_vertices,
             unit_faces,
             color=(80, 155, 245),
@@ -942,7 +940,7 @@ class WorkspaceReachabilityVisualizer:
             receive_shadow=False,
         )
         self.server.scene.add_point_cloud(
-            "/orientation_demo/origins",
+            "/world/chassis_link/orientation_demo/origins",
             origins.astype(np.float32),
             np.tile(np.array([[255, 120, 70]], dtype=np.uint8), (pose_count, 1)),
             point_size=max(0.004, 0.16 * frame_length),
@@ -952,7 +950,7 @@ class WorkspaceReachabilityVisualizer:
 
         for idx, (origin, wxyz) in enumerate(zip(origins, self.orientation_candidates)):
             self.server.scene.add_frame(
-                f"/orientation_demo/pose_{idx:03d}",
+                f"/world/chassis_link/orientation_demo/pose_{idx:03d}",
                 position=tuple(origin.tolist()),
                 wxyz=tuple(np.asarray(wxyz, dtype=np.float64).tolist()),
                 axes_length=frame_length,
@@ -963,10 +961,9 @@ class WorkspaceReachabilityVisualizer:
             f"orientation demo: poses={pose_count}, ori_samples={int(self.args.ori_samples)}, "
             f"sphere_radius={sphere_radius:.3f} m"
         )
-        self.status_text.value = "Orientation demo ready"
-        self.summary_text.value = summary
-        self.sample_count_text.value = str(pose_count)
-        self.legend_html.content = self._build_legend_html("N/A (orientation demo)")
+        self.legend_html.content = self._build_legend_html(
+            "N/A (orientation demo)", self.colormap_select.value, self.color_mode_select.value
+        )
         self.logger.info(summary)
 
     def _build_grid(self):
@@ -1122,19 +1119,92 @@ class WorkspaceReachabilityVisualizer:
         return np.stack([r, g, b], axis=1).astype(np.float32)
 
     @staticmethod
-    def _build_legend_html(ri_range_text: str) -> str:
+    def _rainbow_colormap(values: np.ndarray) -> np.ndarray:
+        """Map normalized values in [0, 1] to rainbow RGB colors."""
+        v = np.clip(np.asarray(values, dtype=np.float32), 0.0, 1.0)
+        anchors = np.array([0.0, 0.2, 0.4, 0.6, 0.8, 1.0], dtype=np.float32)
+        rgb_anchors = np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [1.0, 0.65, 0.0],
+                [1.0, 1.0, 0.0],
+                [0.0, 0.75, 0.0],
+                [0.0, 0.55, 1.0],
+                [0.55, 0.0, 1.0],
+            ],
+            dtype=np.float32,
+        )
+        r = np.interp(v, anchors, rgb_anchors[:, 0])
+        g = np.interp(v, anchors, rgb_anchors[:, 1])
+        b = np.interp(v, anchors, rgb_anchors[:, 2])
+        return np.stack([r, g, b], axis=1).astype(np.float32)
+
+    def _ri_colormap(self, values: np.ndarray) -> np.ndarray:
+        if self.colormap_select.value == "rainbow":
+            return self._rainbow_colormap(values)
+        return self._viridis_colormap(values)
+
+    def _d_segmented_colormap(self, d_values: np.ndarray) -> np.ndarray:
+        d = np.clip(np.asarray(d_values, dtype=np.float32), 0.0, 100.0)
+        bin_indices = np.searchsorted(self._d_percentile_edges[1:], d, side="right")
+        normalized_centers = 0.05 + 0.1 * np.arange(10, dtype=np.float32)
+        palette = self._ri_colormap(normalized_centers)
+        return palette[np.clip(bin_indices, 0, palette.shape[0] - 1)]
+
+    def _build_reachable_colors(self, ri_values: np.ndarray) -> np.ndarray:
+        if self.color_mode_select.value == "D percentage bins":
+            return self._d_segmented_colormap(100.0 * np.asarray(ri_values))
+
+        if self._layer_color_max - self._layer_color_min > 1e-8:
+            normalized_ri = (ri_values - self._layer_color_min) / (
+                self._layer_color_max - self._layer_color_min
+            )
+        else:
+            normalized_ri = np.zeros_like(ri_values, dtype=np.float32)
+        return self._ri_colormap(normalized_ri)
+
+    def _d_percentile_text(self) -> str:
+        edges = ", ".join(f"{float(edge):.1f}" for edge in self._d_percentile_edges)
+        return f"D percentile bins (10% each; edges: {edges}%)"
+
+    def _build_legend_html(
+        self,
+        ri_range_text: str,
+        colormap: str = "viridis",
+        color_mode: str = "Continuous normalized",
+    ) -> str:
+        if color_mode == "D percentage bins":
+            edges = ", ".join(
+                f"{float(edge):.1f}" for edge in self._d_percentile_edges
+            )
+            mode_text = f"D = RI * 100; data percentile bins (edges: {edges}%)"
+        else:
+            mode_text = "Continuous normalized RI"
+        if colormap == "rainbow":
+            gradient = (
+                "linear-gradient(90deg, rgb(255,0,0) 0%, rgb(255,166,0) 20%, "
+                "rgb(255,255,0) 40%, rgb(0,191,0) 60%, rgb(0,140,255) 80%, "
+                "rgb(140,0,255) 100%)"
+            )
+            low_label = "Low RI (rainbow red)"
+            high_label = "High RI (rainbow violet)"
+        else:
+            gradient = (
+                "linear-gradient(90deg, rgb(68,1,84) 0%, rgb(59,82,139) 25%, "
+                "rgb(33,145,140) 50%, rgb(94,201,98) 75%, rgb(253,231,37) 100%)"
+            )
+            low_label = "Low RI (viridis dark)"
+            high_label = "High RI (viridis yellow)"
         return f"""
-<div style="font-family: sans-serif; line-height: 1.35; min-width: 260px;">
-    <div style="font-weight: 700; margin-bottom: 6px;">Legend</div>
+<div style="font-family: sans-serif; line-height: 1.35; min-width: 200px;">
     <div style="margin-bottom: 6px;">
-        Unreachable (N_reach=0):
-        <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background: rgba(170,170,170,0.35); border:1px solid rgba(120,120,120,0.6);vertical-align:middle;"></span>
+        Unreachable:
         transparent spheres
     </div>
-    <div style="margin-bottom: 4px;">Reachable RI color bar:</div>
-    <div style="height: 14px; border-radius: 7px; border: 1px solid #666; background: linear-gradient(90deg, rgb(68,1,84) 0%, rgb(59,82,139) 25%, rgb(33,145,140) 50%, rgb(94,201,98) 75%, rgb(253,231,37) 100%);"></div>
+    <div style="margin-bottom: 4px;">Reachable color map ({mode_text}):</div>
+    <div style="height: 14px; border-radius: 7px; border: 1px solid #666; background: {gradient};"></div>
     <div style="display:flex; justify-content:space-between; margin-top: 2px; font-size: 12px;">
-        <span>Low RI (viridis dark)</span><span>High RI (viridis yellow)</span>
+        <span>{low_label}</span><span>{high_label}</span>
     </div>
     <div style="margin-top: 6px;">RI range: {ri_range_text}</div>
 </div>
@@ -1232,9 +1302,14 @@ class WorkspaceReachabilityVisualizer:
         if reachable_values.size > 0:
             self._layer_color_min = float(np.min(reachable_values))
             self._layer_color_max = float(np.max(reachable_values))
+            di_values = np.clip(100.0 * reachable_values, 0.0, 100.0)
+            self._d_percentile_edges = np.percentile(
+                di_values, D_PERCENTILE_LEVELS
+            ).astype(np.float32)
         else:
             self._layer_color_min = 0.0
             self._layer_color_max = 1.0
+            self._d_percentile_edges = np.linspace(0.0, 100.0, 11, dtype=np.float32)
 
     def _request_workspace_render_refresh(self) -> None:
         with self._render_refresh_lock:
@@ -1245,6 +1320,20 @@ class WorkspaceReachabilityVisualizer:
             timer.daemon = True
             self._render_refresh_timer = timer
             timer.start()
+
+    def _update_point_size(self) -> None:
+        self._scan_point_size = max(0.001, float(self.point_size_slider.value))
+        self._clear_workspace_render()
+        self._request_workspace_render_refresh()
+
+    def _update_colormap(self) -> None:
+        self.legend_html.content = self._build_legend_html(
+            f"{self._layer_color_min:.3f} to {self._layer_color_max:.3f}",
+            self.colormap_select.value,
+            self.color_mode_select.value,
+        )
+        self._clear_workspace_render()
+        self._request_workspace_render_refresh()
 
     def _get_visible_layer_keys(self) -> list[float]:
         if self._scan_voxel_arr is None or self._scan_voxel_arr.shape[0] == 0:
@@ -1287,15 +1376,11 @@ class WorkspaceReachabilityVisualizer:
 
             visible_points = layer_points[visible_mask]
             visible_ri = layer_ri[visible_mask]
-            if self._layer_color_max - self._layer_color_min > 1e-8:
-                normalized_ri = (visible_ri - self._layer_color_min) / (self._layer_color_max - self._layer_color_min)
-            else:
-                normalized_ri = np.zeros_like(visible_ri, dtype=np.float32)
 
             handle_map[layer_z] = self.server.scene.add_point_cloud(
-                f"/workspace/ri_voxels_reachable/{layer_z:.8f}",
+                f"/world/chassis_link/workspace/ri_voxels_reachable/{layer_z:.8f}",
                 visible_points,
-                self._viridis_colormap(normalized_ri),
+                self._build_reachable_colors(visible_ri),
                 point_size=self._scan_point_size,
                 point_shape="rounded",
                 precision="float32",
@@ -1314,7 +1399,7 @@ class WorkspaceReachabilityVisualizer:
         sphere_scales = np.full((visible_points.shape[0],), self._scan_point_size * 0.35, dtype=np.float32)
         sphere_wxyzs = np.tile(np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32), (visible_points.shape[0], 1))
         handle_map[layer_z] = self.server.scene.add_batched_meshes_simple(
-            f"/workspace/ri_voxels_unreachable/{layer_z:.8f}",
+            f"/world/chassis_link/workspace/ri_voxels_unreachable/{layer_z:.8f}",
             unit_vertices,
             unit_faces,
             sphere_wxyzs,
@@ -1363,11 +1448,21 @@ class WorkspaceReachabilityVisualizer:
             visible_reachable_count += int(np.count_nonzero(layer_ri > 0.0))
 
         if visible_total_count == 0:
-            self.legend_html.content = self._build_legend_html("N/A (slice empty)")
+            self.legend_html.content = self._build_legend_html(
+                "N/A (slice empty)", self.colormap_select.value, self.color_mode_select.value
+            )
         elif visible_reachable_count == 0:
-            self.legend_html.content = self._build_legend_html("N/A (no reachable voxels in view)")
+            self.legend_html.content = self._build_legend_html(
+                "N/A (no reachable voxels in view)",
+                self.colormap_select.value,
+                self.color_mode_select.value,
+            )
         else:
-            self.legend_html.content = self._build_legend_html(f"{self._layer_color_min:.3f} to {self._layer_color_max:.3f} (global)")
+            self.legend_html.content = self._build_legend_html(
+                f"{self._layer_color_min:.3f} to {self._layer_color_max:.3f}",
+                self.colormap_select.value,
+                self.color_mode_select.value,
+            )
 
     def _evaluate_position(self, target_position: np.ndarray, base_seed: np.ndarray):
         reachable_cfg = None
@@ -1416,6 +1511,16 @@ class WorkspaceReachabilityVisualizer:
         output_path = Path(output_npz)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        base_output_path = output_path
+        suffix_index = 1
+        while output_path.exists() or output_path.with_name(
+            f"{output_path.stem}_voxels.csv"
+        ).exists():
+            output_path = base_output_path.with_name(
+                f"{base_output_path.stem}_{suffix_index}{base_output_path.suffix}"
+            )
+            suffix_index += 1
+
         xs, ys, zs = self._build_grid_axes()
         grid_shape = np.array([len(xs), len(ys), len(zs)], dtype=np.int32)
         voxel_indices = np.indices(grid_shape, dtype=np.int32).reshape(3, -1).T
@@ -1429,7 +1534,6 @@ class WorkspaceReachabilityVisualizer:
             pose_success_counts=pose_success_counts_arr,
             reachable_mask=reachable_mask,
             total_pose_per_voxel=int(total_pose_per_voxel),
-            fixed_wxyz=self.fixed_wxyz,
             bounds=np.asarray(self.args.bounds, dtype=np.float64),
             step=float(self.args.step),
             ori_samples=int(self.args.ori_samples),
@@ -1483,7 +1587,6 @@ class WorkspaceReachabilityVisualizer:
             points = self._build_grid()
         except Exception as exc:
             self.logger.exception("Failed to build sampling grid")
-            self.status_text.value = f"Grid error: {exc}"
             return
 
         total = int(points.shape[0])
@@ -1494,7 +1597,6 @@ class WorkspaceReachabilityVisualizer:
         total_pose_tests = 0
         total_pose_per_voxel = max(1, len(self.orientation_candidates))
 
-        self.status_text.value = f"Scanning {total} samples..."
         t0 = time.time()
 
         for idx, point in enumerate(points, start=1):
@@ -1509,7 +1611,6 @@ class WorkspaceReachabilityVisualizer:
             if idx % max(1, total // 100) == 0 or idx == total:
                 ratio = 100.0 * np.count_nonzero(np.asarray(voxel_ri_values, dtype=np.float64) > 0.0) / max(1, idx)
                 pose_ratio = 100.0 * sum(pose_success_counts) / max(1, total_pose_tests)
-                self.status_text.value = f"Scanned {idx}/{total} points, reachable {ratio:.1f}%, pose-hit {pose_ratio:.1f}%"
                 self.logger.info(
                     "Scanned %d/%d points, reachable=%d, unreachable=%d, pose_successes=%d/%d",
                     idx,
@@ -1541,9 +1642,6 @@ class WorkspaceReachabilityVisualizer:
             f"reachable={reachable_count}/{total} ({success_rate:.1f}%), "
             f"failed={int(total - reachable_count)}, pose-hit={pose_success_total}/{total_pose_tests} ({pose_success_rate:.1f}%), time={elapsed:.1f}s"
         )
-        self.summary_text.value = summary
-        self.sample_count_text.value = str(total)
-        self.status_text.value = "Scan finished"
         self.logger.info("Workspace scan finished: %s", summary)
 
         if self.args.output_npz:
