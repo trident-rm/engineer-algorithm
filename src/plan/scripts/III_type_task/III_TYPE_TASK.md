@@ -1,17 +1,25 @@
-# III-Type Task Planning for RoboMaster Engineer Using PyRoki
+# Type-III Task Planning for RoboMaster Engineer Using Pyroki
 
 ## Overview
 
-This document describes how to model and solve RoboMaster Engineer Type-III assembly tasks using optimization-based planning in PyRoki.
+This document describes the Type-III constrained-manifold planner implemented in this directory. Type-I fixed motions remain controller actions and do not use this optimizer.
 
-Typical Type-III tasks include:
+## Type-III Planning
 
-- insertion
-- constrained sliding
+Type-III tasks include insertion and constrained sliding, plus the P-axis and Q-axis assembly motions in the end-to-end demo. These tasks define a constrained motion manifold that the TCP must follow. The planner optimizes motion on that manifold rather than forcing the robot through a sequence of fixed 6-DOF poses.
 
-Type-III assembly tasks instead define a constrained motion manifold that the TCP must remain on while preserving task-specific geometric relationships.
+Its design pipeline is:
 
-The planner should optimize motion on this manifold rather than forcing the robot through a sequence of fixed 6-DOF waypoints.
+```text
+Task geometry -> target position/axis samples -> sequential warm start
+-> joint trajectory optimization -> executable trajectory
+```
+
+The implementation accepts target positions and target TCP-X axes and enforces them at every supplied sample. Rotation about TCP-X is left unconstrained by the axis-alignment cost.
+
+## Planner API
+
+`TypeIIIPlanner(robot, link_index, weights=None).plan(start_joint_positions, target_positions, target_axes)` performs a sequential warm start followed by joint-trajectory optimization. Position and TCP-X alignment costs apply at every supplied sample. Approach, Insert, Slide, Turn P, and Turn Q are represented as one interpolated Type-III task path. The Hover endpoint uses 10x position and TCP-X weights; Turn endpoints use the same weights as their other samples.
 
 
 ## Why MoveIt Cartesian Planning Fails
@@ -328,57 +336,13 @@ Only assembly-relevant constraints should be enforced.
 
 ---
 
-## PyRoki Project Structure
+## Current Optimizer Scope
 
-planner/
+The current implementation is concentrated in `III_type_task_optimizer.py` and exposes `TypeIIIPlanner`, which performs sequential warm-start solves followed by full joint-trajectory optimization.
 
-├── robot_loader.py
+The objective terms are position tracking, TCP-X alignment, joint smoothness, soft joint limits, and translational manipulability. Collision checking is not implemented.
 
-├── costs/
-
-│   ├── position_cost.py
-
-│   ├── axis_alignment_cost.py
-
-│   ├── smoothness_cost.py
-
-│   ├── joint_limit_cost.py
-
-│   ├── manipulability_cost.py
-
-│   └── collision_cost.py
-
-├── trajectory/
-
-│   ├── task_generator.py
-
-│   └── trajectory_optimizer.py
-
-└── main.py
-
----
-
-## Required Cost Implementations
-
-Implement the following cost functions:
-
-position_cost(q)
-
-axis_alignment_cost(q)
-
-smoothness_cost(q, q_prev)
-
-joint_limit_cost(q)
-
-manipulability_cost(q)
-
-collision_cost(q)
-
-total_cost(q)
-
----
-
-## Sequential Optimization Strategy
+## Type-III Optimization Strategy
 
 For every task parameter:
 
@@ -410,7 +374,7 @@ Advantages:
 - robust
 - easy to debug
 
-Recommended as the first implementation.
+This sequential solve is used only to initialize the trajectory optimization.
 
 ---
 
@@ -432,11 +396,9 @@ Advantages:
 - smoother trajectories
 - more robust near singularities
 
-Recommended long-term solution.
+The current Type-III planner optimizes the joint trajectory after constructing this warm start.
 
----
-
-## Success Criteria
+### Intended Type-III acceptance criteria
 
 A Type-III planner is considered successful when:
 
@@ -453,6 +415,8 @@ The planner should not depend on exact 6-DOF waypoint satisfaction.
 
 The planner should optimize motion on a task manifold.
 
+These are design acceptance criteria, not guarantees of the current code. The current optimizer reports residuals and optimization status; it has no collision checker and does not enforce all these criteria as hard constraints.
+
 ---
 
 ## Key Principle
@@ -465,18 +429,41 @@ The planner must exploit remaining task redundancy rather than artificially remo
 
 ---
 
-## Executable Sequential Optimization Demo
+## Executable Full Pipeline Demo
 
-`iii_type_task_demo.py` sends the TCP position along a 90-degree quarter-circle in the local TCP X-Z plane. The starting radius points along `-TCP-X` and the circle rotates around `+TCP-Y`; the initial tangent points up, and the arc midpoint lies above the chord to the endpoint. The center is `C = p_start + r * x_tcp`. Over the same progress, the desired TCP-X axis rotates around `+TCP-Y` toward `-TCP-Z`. Only the TCP-X direction is constrained; rotation around TCP-X remains free.
+`end2end_plan_demo.py` generates a randomized core and plans the complete sequence: Approach to Hover, Insert, Slide, Turn P, then Turn Q. The core local X/q axis is based on world `-X` (a 180-degree yaw flip from the old C++ demo). Roll is sampled within +/-30 degrees, yaw within +/-80 degrees, and pitch from -30 to 0 degrees so the local X/q axis never points below the world horizontal plane and remains within 90 degrees of world `-X`. `p/up` are the other rotation-matrix columns.
 
-The reproducible demo start configuration is `joint2=1.9`, `joint3=0.5`, `joint5=-1.6` (other joints zero); it makes TCP-X point nearly along world forward and keeps this sample arc within the configured joint limits.
+The core is sampled in an absolute world-coordinate cuboid, independent of the TCP, with a fixed center at (0.70, 0.00, 0.40) m. Position jitter is +/-0.05 m in X and +/-0.10 m in Y and Z. The core local X/q axis points roughly along world -X. Regenerating the core changes its pose but does not move this world-coordinate frame.
 
-The optimizer first solves samples sequentially to construct a warm start. It then fixes `q_0` and jointly optimizes the flattened free trajectory `[q_1, ..., q_N]`, minimizing `sum_k J_total(q_k)` plus pairwise joint smoothness across the complete path. The objective contains weighted position, axis-alignment, soft joint-limit, and manipulability costs. Joint bounds are also enforced by the bounded optimizer. Collision costs are intentionally omitted in this test. The position and TCP-X residuals are reported after optimization; they are not used as hard rejection thresholds.
+### Type-III API
 
-Run it from the workspace root. A 3 cm radius is a known-good interactive test setting:
+The task module lives in `src/plan/scripts/III_type_task/`. Use `TypeIIIPlanner` from `III_type_task_optimizer.py`:
 
-```bash
-python3 src/plan/scripts/III_type_task/iii_type_task_demo.py --radius 0.03
+```python
+planner = TypeIIIPlanner(robot, ee_link_index)
+result = planner.plan(start_q, target_positions, target_tcp_x_axes)
 ```
 
-In Viser, drag the TCP position control to choose the task start, then click `Plan Turn P + Turn Q`. The target orientation stays fixed while dragging. Pyroki first optimizes Turn P to obtain its terminal TCP frame. Turn Q then starts at that terminal pose: its circle center is displaced by `+radius * TCP-X`, its rotation axis is the terminal TCP-Z, and the positive 60-degree rotation is counter-clockwise when viewed along +Z. Turn P defaults to 90 degrees; Turn Q defaults to 60 degrees and is configurable with `--turn-q-sweep-deg`. Both segments share the configured radius. The P and Q paths are shown in orange and blue, and the combined trajectory is globally optimized after constructing both task paths. After a successful plan, use `Arc sample` or `Play optimized arc`. A failed IK or unreachable arc is reported in `Status`; the radius is never silently reduced. The current default radius is 20 cm; use `--radius 0.03` for the validated interactive example. `--sweep-deg`, `--steps`, cost weights, and viewer port are also configurable. This remains visualization-only and does not command hardware or check collisions.
+All supplied task samples participate in Cartesian position and TCP-X alignment costs. The demo interpolates Approach to Hover and optimizes it together with Insert, Slide, Turn P, and Turn Q. The Approach endpoint receives 10x position and TCP-X weights; Turn endpoints use the regular path-point weights.
+
+### Normalized optimizer weights
+
+All cost terms are dimensionless averages with interpretable reference scales: 1 cm TCP position error, 5 degree TCP-X error, 0.1 rad RMS joint step, 0.15 rad joint-limit margin, and 0.05 m^3 translational manipulability. Their GUI/CLI weights are relative multipliers, default `1.0` with a `0–10` range. A weight of `2` doubles that term's normalized contribution; changing waypoint count does not automatically scale it. Manipulability is a negative reward. The Status text and robustness CSV report each final weighted contribution so tuning can be based on actual objective shares.
+
+### Batch robustness test
+
+Run `python3 src/plan/scripts/III_type_task/end2end_robustness_test.py` to evaluate the complete interpolated Type-III target path for deterministic randomized core poses. Results go to `test_result_type_iii.csv`; the previous Type-III baseline remains in `test_result_baseline.csv`.
+
+The saved start configuration is `joint2=1.9`, `joint3=0.5`, `joint5=-1.6` (other joints zero), but the user can drag the TCP start before planning. Hover is `core_center + hover_distance*q` with TCP-X aligned to `-q`; Insert moves along `-q` by the same configured distance to the core center; Slide moves along `+up` by its configured distance.
+
+Turn P follows the C++ p/q/up convention: the initial radius is `radius*q`, and the sign of rotation about `p` is chosen so the initial tangent points toward `up`. Turn Q starts at the P endpoint and uses the P-terminal TCP-Z as its axis; its circle center is one radius along the P-terminal TCP-X, and positive rotation is counter-clockwise when viewed along +Z.
+
+The demo interpolates Approach from the user-selected start to Hover, then optimizes Approach, Insert, Slide, Turn P, and Turn Q as one Type-III trajectory. Only the Hover endpoint receives increased position and TCP-X weights. Optimizer convergence does not guarantee every task is reachable.
+
+Run it from the workspace root. A 3 cm radius is a practical interactive example:
+
+```bash
+python3 src/plan/scripts/III_type_task/end2end_plan_demo.py --radius 0.03 --steps 8
+```
+
+In Viser, drag the TCP position control to choose the task start, then click `Plan full pipeline`. The target orientation stays fixed while dragging. Approach is linearly interpolated from the current TCP pose to Hover, and the complete Approach/Insert/Slide/Turn P/Turn Q path is optimized in one Type-III call. Only the Hover endpoint receives the increased position and TCP-X weights; Turn P/Q endpoints remain regular path samples. Turn Q starts at the P endpoint: its circle center is displaced by `+radius * TCP-X`, its rotation axis is the terminal TCP-Z, and positive rotation is counter-clockwise when viewed along +Z. Turn P defaults to 90 degrees; Turn Q defaults to 60 degrees and is configurable with `--turn-q-sweep-deg`. Both segments share the configured radius. The P and Q targets are shown in orange and blue. After a successful plan, use `Pipeline sample` or `Play optimized arc`. A failed IK or unreachable path is reported in `Status`; the radius is never silently reduced. The current default radius is 20 cm; use `--radius 0.03` for the validated interactive example. `--sweep-deg`, `--steps`, cost weights, and viewer port are also configurable. This remains visualization-only and does not command hardware or check collisions.

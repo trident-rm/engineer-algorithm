@@ -8,14 +8,20 @@ import jaxlie
 import numpy as np
 from scipy.optimize import minimize
 
+POSITION_ERROR_SCALE_M = 0.01
+AXIS_ERROR_SCALE = 1.0 - np.cos(np.deg2rad(5.0))
+JOINT_STEP_SCALE_RAD = 0.1
+JOINT_LIMIT_MARGIN_RAD = 0.15
+MANIPULABILITY_SCALE_M3 = 0.05
+
 
 @dataclass(frozen=True)
 class CostWeights:
-    position: float = 10000.0
-    axis_alignment: float = 5000.0
-    smoothness: float = 10.0
-    joint_limit: float = 5.0
-    manipulability: float = 0.001
+    position: float = 1.0
+    axis_alignment: float = 1.0
+    smoothness: float = 1.0
+    joint_limit: float = 1.0
+    manipulability: float = 1.0
 
 
 @dataclass
@@ -28,27 +34,37 @@ class TrajectoryResult:
     optimizer_iterations: int
     optimizer_success: bool
     objective_value: float
+    weighted_cost_components: dict[str, float]
 
 
 def position_cost(robot, joint_positions, target_position, link_index):
-    """Squared TCP position error in meters."""
+    """Squared TCP position error normalized to a 1 cm reference."""
     tcp_position = robot.forward_kinematics(joint_positions)[link_index, 4:]
-    return jnp.sum(jnp.square(tcp_position - target_position))
+    return jnp.sum(jnp.square(tcp_position - target_position)) / POSITION_ERROR_SCALE_M**2
 
 
 def axis_alignment_cost(robot, joint_positions, target_axis, link_index):
-    """One minus the dot product of the current and target TCP X axes."""
+    """Axis error normalized so a 5 degree error has unit cost."""
     pose = robot.forward_kinematics(joint_positions)[link_index]
     tcp_x_axis = jaxlie.SO3(pose[:4]).apply(jnp.array([1.0, 0.0, 0.0]))
-    return 1.0 - jnp.clip(jnp.dot(tcp_x_axis, target_axis), -1.0, 1.0)
+    error = 1.0 - jnp.clip(jnp.dot(tcp_x_axis, target_axis), -1.0, 1.0)
+    return error / AXIS_ERROR_SCALE
 
 
 def smoothness_cost(joint_positions, previous_joint_positions):
-    """Squared joint displacement from the previous sequential solution."""
-    return jnp.sum(jnp.square(joint_positions - previous_joint_positions))
+    """Mean squared joint displacement normalized to a 0.1 rad RMS reference."""
+    return jnp.mean(
+        jnp.square(joint_positions - previous_joint_positions)
+    ) / JOINT_STEP_SCALE_RAD**2
 
 
-def joint_limit_cost(joint_positions, lower_limits, upper_limits, margin=0.15, temperature=0.03):
+def joint_limit_cost(
+    joint_positions,
+    lower_limits,
+    upper_limits,
+    margin=JOINT_LIMIT_MARGIN_RAD,
+    temperature=0.03,
+):
     """Softly penalize configurations approaching either joint limit."""
     lower_distance = temperature * jax.nn.softplus(
         (lower_limits + margin - joint_positions) / temperature
@@ -56,7 +72,7 @@ def joint_limit_cost(joint_positions, lower_limits, upper_limits, margin=0.15, t
     upper_distance = temperature * jax.nn.softplus(
         (joint_positions - upper_limits + margin) / temperature
     )
-    return jnp.sum(jnp.square(lower_distance) + jnp.square(upper_distance))
+    return jnp.mean(jnp.square(lower_distance) + jnp.square(upper_distance)) / margin**2
 
 
 def manipulability_cost(robot, joint_positions, link_index):
@@ -66,7 +82,7 @@ def manipulability_cost(robot, joint_positions, link_index):
     )(joint_positions)
     gram = position_jacobian @ position_jacobian.T
     manipulability = jnp.sqrt(jnp.maximum(jnp.linalg.det(gram), 0.0) + 1e-12)
-    return -manipulability
+    return -manipulability / MANIPULABILITY_SCALE_M3
 
 
 def total_cost(
@@ -79,12 +95,16 @@ def total_cost(
     lower_limits,
     upper_limits,
     weights,
+    position_weight=1.0,
+    axis_weight=1.0,
 ):
     """Weighted Type-III objective without collision terms."""
     return (
         weights.position
+        * position_weight
         * position_cost(robot, joint_positions, target_position, link_index)
         + weights.axis_alignment
+        * axis_weight
         * axis_alignment_cost(robot, joint_positions, target_axis, link_index)
         + weights.smoothness
         * smoothness_cost(joint_positions, previous_joint_positions)
@@ -104,19 +124,61 @@ def trajectory_total_cost(
     lower_limits,
     upper_limits,
     weights,
+    position_weights=None,
+    axis_weights=None,
 ):
-    """Sum task, smoothness, limit, and manipulability costs over the full path."""
+    """Mean dimensionless objective over the full path."""
+    return jnp.sum(
+        trajectory_cost_components(
+            robot,
+            joint_trajectory,
+            target_positions,
+            target_axes,
+            link_index,
+            lower_limits,
+            upper_limits,
+            weights,
+            position_weights,
+            axis_weights,
+        )
+    )
+
+
+def trajectory_cost_components(
+    robot,
+    joint_trajectory,
+    target_positions,
+    target_axes,
+    link_index,
+    lower_limits,
+    upper_limits,
+    weights,
+    position_weights=None,
+    axis_weights=None,
+):
+    """Return the five weighted, normalized objective contributions."""
     link_poses = robot.forward_kinematics(joint_trajectory)[:, link_index]
     tcp_positions = link_poses[:, 4:]
-    position_terms = jnp.sum(jnp.square(tcp_positions - target_positions), axis=-1)
+    position_terms = (
+        jnp.sum(jnp.square(tcp_positions - target_positions), axis=-1)
+        / POSITION_ERROR_SCALE_M**2
+    )
+    if position_weights is not None:
+        position_terms = position_terms * jnp.asarray(position_weights)
 
     tcp_x_axes = jax.vmap(
         lambda pose: jaxlie.SO3(pose[:4]).apply(jnp.array([1.0, 0.0, 0.0]))
     )(link_poses)
     axis_dots = jnp.sum(tcp_x_axes * target_axes, axis=-1)
-    axis_terms = 1.0 - jnp.clip(axis_dots, -1.0, 1.0)
+    axis_terms = (
+        1.0 - jnp.clip(axis_dots, -1.0, 1.0)
+    ) / AXIS_ERROR_SCALE
+    if axis_weights is not None:
+        axis_terms = axis_terms * jnp.asarray(axis_weights)
 
-    smoothness = jnp.sum(jnp.square(joint_trajectory[1:] - joint_trajectory[:-1]))
+    smoothness = jnp.mean(
+        jnp.square(joint_trajectory[1:] - joint_trajectory[:-1])
+    ) / JOINT_STEP_SCALE_RAD**2
     limits = joint_limit_cost(joint_trajectory, lower_limits, upper_limits)
 
     position_jacobians = jax.vmap(
@@ -129,12 +191,26 @@ def trajectory_total_cost(
         jnp.maximum(jnp.linalg.det(position_grams), 0.0) + 1e-12
     )
 
-    return (
-        weights.position * jnp.sum(position_terms)
-        + weights.axis_alignment * jnp.sum(axis_terms)
-        + weights.smoothness * smoothness
-        + weights.joint_limit * limits
-        - weights.manipulability * jnp.sum(manipulabilities)
+    position_normalizer = (
+        jnp.asarray(joint_trajectory.shape[0], dtype=jnp.float32)
+        if position_weights is None
+        else jnp.maximum(jnp.sum(position_weights), 1.0)
+    )
+    axis_normalizer = (
+        jnp.asarray(joint_trajectory.shape[0], dtype=jnp.float32)
+        if axis_weights is None
+        else jnp.maximum(jnp.sum(axis_weights), 1.0)
+    )
+    return jnp.stack(
+        [
+            weights.position * jnp.sum(position_terms) / position_normalizer,
+            weights.axis_alignment * jnp.sum(axis_terms) / axis_normalizer,
+            weights.smoothness * smoothness,
+            weights.joint_limit * limits,
+            -weights.manipulability
+            * jnp.mean(manipulabilities)
+            / MANIPULABILITY_SCALE_M3,
+        ]
     )
 
 
@@ -223,7 +299,7 @@ def make_circular_task_path(
     return center, np.asarray(target_positions), np.asarray(target_axes)
 
 
-class TypeIIITaskPlanner:
+class TypeIIIPlanner:
     """Warm-start per sample, then jointly optimize the full joint trajectory."""
 
     def __init__(
@@ -239,7 +315,7 @@ class TypeIIITaskPlanner:
         self.upper_limits = np.asarray(robot.joints.upper_limits, dtype=np.float64)
         self._value_and_grad = jax.jit(
             jax.value_and_grad(
-                lambda q, p, x, q_prev: total_cost(
+                lambda q, p, x, q_prev, position_weight, axis_weight: total_cost(
                     self.robot,
                     q,
                     p,
@@ -249,12 +325,14 @@ class TypeIIITaskPlanner:
                     jnp.asarray(self.lower_limits),
                     jnp.asarray(self.upper_limits),
                     self.weights,
+                    position_weight,
+                    axis_weight,
                 )
             )
         )
         self._trajectory_value_and_grad = jax.jit(
             jax.value_and_grad(
-                lambda free_trajectory, start, positions, axes: trajectory_total_cost(
+                lambda free_trajectory, start, positions, axes, position_weights, axis_weights: trajectory_total_cost(
                     self.robot,
                     jnp.concatenate([start[None, :], free_trajectory], axis=0),
                     positions,
@@ -263,6 +341,8 @@ class TypeIIITaskPlanner:
                     jnp.asarray(self.lower_limits),
                     jnp.asarray(self.upper_limits),
                     self.weights,
+                    position_weights,
+                    axis_weights,
                 )
             )
         )
@@ -278,7 +358,14 @@ class TypeIIITaskPlanner:
         axis_error = float(np.arccos(dot))
         return position_error, axis_error
 
-    def plan(self, start_joint_positions, target_positions, target_axes):
+    def plan(
+        self,
+        start_joint_positions,
+        target_positions,
+        target_axes,
+        position_weights=None,
+        axis_weights=None,
+    ):
         start_joint_positions = np.asarray(start_joint_positions, dtype=np.float64)
         target_positions = np.asarray(target_positions, dtype=np.float64)
         target_axes = np.asarray(target_axes, dtype=np.float64)
@@ -290,6 +377,22 @@ class TypeIIITaskPlanner:
             raise ValueError("start_joint_positions does not match the robot joint count")
         if target_positions.shape[0] < 2:
             raise ValueError("At least two task samples are required")
+        if position_weights is None:
+            position_weights = np.ones(target_positions.shape[0], dtype=np.float64)
+        else:
+            position_weights = np.asarray(position_weights, dtype=np.float64)
+            if position_weights.shape != (target_positions.shape[0],):
+                raise ValueError("position_weights must have shape (samples,)")
+            if not np.all(np.isfinite(position_weights)) or np.any(position_weights < 0.0):
+                raise ValueError("position_weights must be finite and non-negative")
+        if axis_weights is None:
+            axis_weights = np.ones(target_positions.shape[0], dtype=np.float64)
+        else:
+            axis_weights = np.asarray(axis_weights, dtype=np.float64)
+            if axis_weights.shape != (target_positions.shape[0],):
+                raise ValueError("axis_weights must have shape (samples,)")
+            if not np.all(np.isfinite(axis_weights)) or np.any(axis_weights < 0.0):
+                raise ValueError("axis_weights must be finite and non-negative")
 
         warm_start_path = [start_joint_positions]
         warm_start_iterations = 0
@@ -305,6 +408,8 @@ class TypeIIITaskPlanner:
                     jnp.asarray(target_position),
                     jnp.asarray(target_axis),
                     jnp.asarray(previous),
+                    jnp.asarray(position_weights[sample_index]),
+                    jnp.asarray(axis_weights[sample_index]),
                 )
                 return float(value), np.asarray(gradient, dtype=np.float64)
 
@@ -333,6 +438,8 @@ class TypeIIITaskPlanner:
                 jnp.asarray(start_joint_positions),
                 jnp.asarray(target_positions),
                 jnp.asarray(target_axes),
+                jnp.asarray(position_weights),
+                jnp.asarray(axis_weights),
             )
             return float(value), np.asarray(gradient, dtype=np.float64).reshape(-1)
 
@@ -372,4 +479,24 @@ class TypeIIITaskPlanner:
             optimizer_iterations=warm_start_iterations + int(global_result.nit),
             optimizer_success=bool(global_result.success),
             objective_value=float(global_result.fun),
+            weighted_cost_components=dict(
+                zip(
+                    ("position", "axis", "smoothness", "joint_limit", "manipulability"),
+                    np.asarray(
+                        trajectory_cost_components(
+                            self.robot,
+                            jnp.asarray(joint_trajectory),
+                            jnp.asarray(target_positions),
+                            jnp.asarray(target_axes),
+                            self.link_index,
+                            jnp.asarray(self.lower_limits),
+                            jnp.asarray(self.upper_limits),
+                            self.weights,
+                            jnp.asarray(position_weights),
+                            jnp.asarray(axis_weights),
+                        ),
+                        dtype=np.float64,
+                    ).tolist(),
+                )
+            ),
         )
