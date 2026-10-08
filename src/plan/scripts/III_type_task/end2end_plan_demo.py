@@ -229,7 +229,7 @@ def main():
     parser.add_argument("--axis-weight", type=float, default=1.0)
     parser.add_argument("--smoothness-weight", type=float, default=1.0)
     parser.add_argument("--joint-limit-weight", type=float, default=1.0)
-    parser.add_argument("--manipulability-weight", type=float, default=1.0)
+    parser.add_argument("--manipulability-weight", type=float, default=0.0)
     args = parser.parse_args()
 
     urdf_path = Path(args.urdf).expanduser().resolve()
@@ -256,7 +256,7 @@ def main():
     import jax.numpy as jnp
     import jaxlie
 
-    from III_type_task_optimizer import CostWeights, TypeIIIPlanner, make_circular_task_path
+    from III_type_task_planner import CostWeights, TypeIIIPlanner, make_circular_task_path
 
     joint_names = list(robot.joints.actuated_names)
     link_names = list(robot.links.names)

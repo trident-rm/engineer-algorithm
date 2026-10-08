@@ -21,7 +21,7 @@ class CostWeights:
     axis_alignment: float = 1.0
     smoothness: float = 1.0
     joint_limit: float = 1.0
-    manipulability: float = 1.0
+    manipulability: float = 0.0
 
 
 @dataclass
@@ -99,7 +99,7 @@ def total_cost(
     axis_weight=1.0,
 ):
     """Weighted Type-III objective without collision terms."""
-    return (
+    cost = (
         weights.position
         * position_weight
         * position_cost(robot, joint_positions, target_position, link_index)
@@ -110,9 +110,12 @@ def total_cost(
         * smoothness_cost(joint_positions, previous_joint_positions)
         + weights.joint_limit
         * joint_limit_cost(joint_positions, lower_limits, upper_limits)
-        + weights.manipulability
-        * manipulability_cost(robot, joint_positions, link_index)
     )
+    if weights.manipulability != 0.0:
+        cost = cost + weights.manipulability * manipulability_cost(
+            robot, joint_positions, link_index
+        )
+    return cost
 
 
 def trajectory_total_cost(
@@ -181,15 +184,24 @@ def trajectory_cost_components(
     ) / JOINT_STEP_SCALE_RAD**2
     limits = joint_limit_cost(joint_trajectory, lower_limits, upper_limits)
 
-    position_jacobians = jax.vmap(
-        jax.jacfwd(
-            lambda cfg: robot.forward_kinematics(cfg)[link_index, 4:]
+    manipulability_term = jnp.asarray(0.0)
+    if weights.manipulability != 0.0:
+        position_jacobians = jax.vmap(
+            jax.jacfwd(
+                lambda cfg: robot.forward_kinematics(cfg)[link_index, 4:]
+            )
+        )(joint_trajectory)
+        position_grams = position_jacobians @ jnp.swapaxes(
+            position_jacobians, -1, -2
         )
-    )(joint_trajectory)
-    position_grams = position_jacobians @ jnp.swapaxes(position_jacobians, -1, -2)
-    manipulabilities = jnp.sqrt(
-        jnp.maximum(jnp.linalg.det(position_grams), 0.0) + 1e-12
-    )
+        manipulabilities = jnp.sqrt(
+            jnp.maximum(jnp.linalg.det(position_grams), 0.0) + 1e-12
+        )
+        manipulability_term = (
+            -weights.manipulability
+            * jnp.mean(manipulabilities)
+            / MANIPULABILITY_SCALE_M3
+        )
 
     position_normalizer = (
         jnp.asarray(joint_trajectory.shape[0], dtype=jnp.float32)
@@ -207,9 +219,7 @@ def trajectory_cost_components(
             weights.axis_alignment * jnp.sum(axis_terms) / axis_normalizer,
             weights.smoothness * smoothness,
             weights.joint_limit * limits,
-            -weights.manipulability
-            * jnp.mean(manipulabilities)
-            / MANIPULABILITY_SCALE_M3,
+            manipulability_term,
         ]
     )
 

@@ -340,7 +340,7 @@ Only assembly-relevant constraints should be enforced.
 
 The current implementation is concentrated in `III_type_task_optimizer.py` and exposes `TypeIIIPlanner`, which performs sequential warm-start solves followed by full joint-trajectory optimization.
 
-The objective terms are position tracking, TCP-X alignment, joint smoothness, soft joint limits, and translational manipulability. Collision checking is not implemented.
+The objective terms are position tracking, TCP-X alignment, joint smoothness, soft joint limits, and optional translational manipulability. Manipulability is disabled by default (weight `0`) to avoid Jacobian evaluations; set its weight above `0` to enable it. Collision checking is not implemented.
 
 ## Type-III Optimization Strategy
 
@@ -446,9 +446,63 @@ result = planner.plan(start_q, target_positions, target_tcp_x_axes)
 
 All supplied task samples participate in Cartesian position and TCP-X alignment costs. The demo interpolates Approach to Hover and optimizes it together with Insert, Slide, Turn P, and Turn Q. The Approach endpoint receives 10x position and TCP-X weights; Turn endpoints use the regular path-point weights.
 
+### State Machine Integration
+
+The planner is a Python in-process API. A state-machine planning state must already own a Pyroki `robot`, the current measured joint configuration, and the task geometry needed to build the target arrays. It does not perform ROS communication, IK for the start pose, collision checking, or hardware execution.
+
+```python
+from pathlib import Path
+import sys
+import numpy as np
+
+planner_dir = Path("/home/hku/robo_arm/src/plan/scripts/III_type_task")
+sys.path.insert(0, str(planner_dir))
+
+from III_type_task_optimizer import CostWeights, TypeIIIPlanner
+
+ee_link_index = list(robot.links.names).index("gripper")
+planner = TypeIIIPlanner(
+  robot,
+  ee_link_index,
+  weights=CostWeights(
+    position=1.0,
+    axis_alignment=1.0,
+    smoothness=1.0,
+    joint_limit=1.0,
+    manipulability=0.0,
+  ),
+)
+
+result = planner.plan(
+  start_joint_positions=current_joint_positions,
+  target_positions=target_positions,
+  target_axes=target_tcp_x_axes,
+  position_weights=position_weights,
+  axis_weights=axis_weights,
+)
+
+if not result.optimizer_success:
+  raise RuntimeError("Type-III optimizer stopped before convergence")
+
+joint_trajectory = result.joint_positions
+```
+
+`current_joint_positions` must have shape `(joint_count,)`, in the order of `robot.joints.actuated_names`. `target_positions` and `target_tcp_x_axes` must both have shape `(sample_count, 3)`, with `sample_count >= 2`; every TCP-X target must be a nonzero unit-direction vector. The first target sample should represent the current task state, and later samples define the full task path in execution order.
+
+`position_weights` and `axis_weights` are optional non-negative arrays of shape `(sample_count,)`. Omit them for unit weights. To make a waypoint stricter without turning it into a hard equality constraint, increase its two entries. The demo assigns `10.0` to the Hover endpoint and `1.0` elsewhere:
+
+```python
+position_weights = np.ones(len(target_positions))
+axis_weights = np.ones(len(target_positions))
+position_weights[hover_index] = 10.0
+axis_weights[hover_index] = 10.0
+```
+
+The returned `TrajectoryResult` provides `joint_positions`, per-sample `position_errors` in meters, `axis_errors_rad`, `optimizer_success`, `optimizer_iterations`, `objective_value`, and `weighted_cost_components`. A state machine should apply its own acceptance thresholds to the maximum residuals before sending `joint_positions` to a downstream time parameterizer/executor. The planner has no collision checking, so collision validation remains the caller's responsibility.
+
 ### Normalized optimizer weights
 
-All cost terms are dimensionless averages with interpretable reference scales: 1 cm TCP position error, 5 degree TCP-X error, 0.1 rad RMS joint step, 0.15 rad joint-limit margin, and 0.05 m^3 translational manipulability. Their GUI/CLI weights are relative multipliers, default `1.0` with a `0–10` range. A weight of `2` doubles that term's normalized contribution; changing waypoint count does not automatically scale it. Manipulability is a negative reward. The Status text and robustness CSV report each final weighted contribution so tuning can be based on actual objective shares.
+All cost terms are dimensionless averages with interpretable reference scales: 1 cm TCP position error, 5 degree TCP-X error, 0.1 rad RMS joint step, 0.15 rad joint-limit margin, and 0.05 m^3 translational manipulability. Their GUI/CLI weights are relative multipliers in the `0–10` range. Position, TCP-X, smoothness, and joint-limit weights default to `1.0`; manipulability defaults to `0.0` and is not evaluated unless explicitly enabled. A weight of `2` doubles that term's normalized contribution; changing waypoint count does not automatically scale it. Manipulability is a negative reward. The Status text and robustness CSV report each final weighted contribution so tuning can be based on actual objective shares.
 
 ### Batch robustness test
 
