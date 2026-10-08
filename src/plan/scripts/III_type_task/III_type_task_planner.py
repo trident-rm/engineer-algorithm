@@ -37,16 +37,13 @@ class TrajectoryResult:
     weighted_cost_components: dict[str, float]
 
 
-def position_cost(robot, joint_positions, target_position, link_index):
+def position_cost(tcp_position, target_position):
     """Squared TCP position error normalized to a 1 cm reference."""
-    tcp_position = robot.forward_kinematics(joint_positions)[link_index, 4:]
     return jnp.sum(jnp.square(tcp_position - target_position)) / POSITION_ERROR_SCALE_M**2
 
 
-def axis_alignment_cost(robot, joint_positions, target_axis, link_index):
+def axis_alignment_cost(tcp_x_axis, target_axis):
     """Axis error normalized so a 5 degree error has unit cost."""
-    pose = robot.forward_kinematics(joint_positions)[link_index]
-    tcp_x_axis = jaxlie.SO3(pose[:4]).apply(jnp.array([1.0, 0.0, 0.0]))
     error = 1.0 - jnp.clip(jnp.dot(tcp_x_axis, target_axis), -1.0, 1.0)
     return error / AXIS_ERROR_SCALE
 
@@ -75,14 +72,20 @@ def joint_limit_cost(
     return jnp.mean(jnp.square(lower_distance) + jnp.square(upper_distance)) / margin**2
 
 
-def manipulability_cost(robot, joint_positions, link_index):
+def manipulability_cost(position_jacobian):
     """Negative Yoshikawa translational manipulability of the TCP."""
-    position_jacobian = jax.jacfwd(
-        lambda cfg: robot.forward_kinematics(cfg)[link_index, 4:]
-    )(joint_positions)
     gram = position_jacobian @ position_jacobian.T
     manipulability = jnp.sqrt(jnp.maximum(jnp.linalg.det(gram), 0.0) + 1e-12)
     return -manipulability / MANIPULABILITY_SCALE_M3
+
+
+def _position_with_pose(robot, joint_positions, link_index):
+    pose = robot.forward_kinematics(joint_positions)[link_index]
+    return pose[4:], pose
+
+
+def _tcp_x_axis(pose):
+    return jaxlie.SO3(pose[:4]).apply(jnp.array([1.0, 0.0, 0.0]))
 
 
 def total_cost(
@@ -99,22 +102,29 @@ def total_cost(
     axis_weight=1.0,
 ):
     """Weighted Type-III objective without collision terms."""
+    position_jacobian = None
+    if weights.manipulability != 0.0:
+        position_jacobian, pose = jax.jacfwd(
+            lambda cfg: _position_with_pose(robot, cfg, link_index),
+            has_aux=True,
+        )(joint_positions)
+    else:
+        _, pose = _position_with_pose(robot, joint_positions, link_index)
+
     cost = (
         weights.position
         * position_weight
-        * position_cost(robot, joint_positions, target_position, link_index)
+        * position_cost(pose[4:], target_position)
         + weights.axis_alignment
         * axis_weight
-        * axis_alignment_cost(robot, joint_positions, target_axis, link_index)
+        * axis_alignment_cost(_tcp_x_axis(pose), target_axis)
         + weights.smoothness
         * smoothness_cost(joint_positions, previous_joint_positions)
         + weights.joint_limit
         * joint_limit_cost(joint_positions, lower_limits, upper_limits)
     )
     if weights.manipulability != 0.0:
-        cost = cost + weights.manipulability * manipulability_cost(
-            robot, joint_positions, link_index
-        )
+        cost = cost + weights.manipulability * manipulability_cost(position_jacobian)
     return cost
 
 
@@ -160,7 +170,17 @@ def trajectory_cost_components(
     axis_weights=None,
 ):
     """Return the five weighted, normalized objective contributions."""
-    link_poses = robot.forward_kinematics(joint_trajectory)[:, link_index]
+    position_jacobians = None
+    if weights.manipulability != 0.0:
+        position_jacobians, link_poses = jax.vmap(
+            jax.jacfwd(
+                lambda cfg: _position_with_pose(robot, cfg, link_index),
+                has_aux=True,
+            )
+        )(joint_trajectory)
+    else:
+        link_poses = robot.forward_kinematics(joint_trajectory)[:, link_index]
+
     tcp_positions = link_poses[:, 4:]
     position_terms = (
         jnp.sum(jnp.square(tcp_positions - target_positions), axis=-1)
@@ -169,9 +189,7 @@ def trajectory_cost_components(
     if position_weights is not None:
         position_terms = position_terms * jnp.asarray(position_weights)
 
-    tcp_x_axes = jax.vmap(
-        lambda pose: jaxlie.SO3(pose[:4]).apply(jnp.array([1.0, 0.0, 0.0]))
-    )(link_poses)
+    tcp_x_axes = jax.vmap(_tcp_x_axis)(link_poses)
     axis_dots = jnp.sum(tcp_x_axes * target_axes, axis=-1)
     axis_terms = (
         1.0 - jnp.clip(axis_dots, -1.0, 1.0)
@@ -186,11 +204,6 @@ def trajectory_cost_components(
 
     manipulability_term = jnp.asarray(0.0)
     if weights.manipulability != 0.0:
-        position_jacobians = jax.vmap(
-            jax.jacfwd(
-                lambda cfg: robot.forward_kinematics(cfg)[link_index, 4:]
-            )
-        )(joint_trajectory)
         position_grams = position_jacobians @ jnp.swapaxes(
             position_jacobians, -1, -2
         )
