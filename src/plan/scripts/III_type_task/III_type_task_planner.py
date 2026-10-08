@@ -13,6 +13,7 @@ AXIS_ERROR_SCALE = 1.0 - np.cos(np.deg2rad(5.0))
 JOINT_STEP_SCALE_RAD = 0.1
 JOINT_LIMIT_MARGIN_RAD = 0.15
 MANIPULABILITY_SCALE_M3 = 0.05
+WARM_START_KEYFRAME_INTERVAL = 5
 
 
 @dataclass(frozen=True)
@@ -370,6 +371,40 @@ class TypeIIIPlanner:
             )
         )
 
+    def warm_up(self, start_joint_positions, sample_count):
+        """Compile the single-sample and full-trajectory objectives for a path shape."""
+        if sample_count < 2:
+            raise ValueError("sample_count must be at least 2")
+        start = jnp.asarray(start_joint_positions)
+        target_positions = jnp.zeros((sample_count, 3), dtype=start.dtype)
+        target_axes = jnp.broadcast_to(
+            jnp.array([1.0, 0.0, 0.0], dtype=start.dtype),
+            (sample_count, 3),
+        )
+        sample_weights = jnp.ones((sample_count,), dtype=start.dtype)
+
+        single_outputs = self._value_and_grad(
+            start,
+            target_positions[0],
+            target_axes[0],
+            start,
+            jnp.asarray(1.0, dtype=start.dtype),
+            jnp.asarray(1.0, dtype=start.dtype),
+        )
+        for output in single_outputs:
+            output.block_until_ready()
+
+        trajectory_outputs = self._trajectory_value_and_grad(
+            jnp.broadcast_to(start, (sample_count - 1, start.shape[0])),
+            start,
+            target_positions,
+            target_axes,
+            sample_weights,
+            sample_weights,
+        )
+        for output in trajectory_outputs:
+            output.block_until_ready()
+
     def _measure_errors(self, joint_positions, target_position, target_axis):
         pose = np.asarray(self.robot.forward_kinematics(joint_positions))[self.link_index]
         actual_position = pose[4:]
@@ -417,11 +452,21 @@ class TypeIIIPlanner:
             if not np.all(np.isfinite(axis_weights)) or np.any(axis_weights < 0.0):
                 raise ValueError("axis_weights must be finite and non-negative")
 
-        warm_start_path = [start_joint_positions]
+        keyframe_indices = np.arange(
+            WARM_START_KEYFRAME_INTERVAL,
+            target_positions.shape[0],
+            WARM_START_KEYFRAME_INTERVAL,
+        )
+        final_sample_index = target_positions.shape[0] - 1
+        if keyframe_indices.size == 0 or keyframe_indices[-1] != final_sample_index:
+            keyframe_indices = np.append(keyframe_indices, final_sample_index)
+
+        keyframe_configurations = [start_joint_positions]
+        optimized_keyframe_indices = [0]
         warm_start_iterations = 0
         previous = start_joint_positions
 
-        for sample_index in range(1, target_positions.shape[0]):
+        for sample_index in keyframe_indices:
             target_position = target_positions[sample_index]
             target_axis = target_axes[sample_index]
 
@@ -447,9 +492,23 @@ class TypeIIIPlanner:
             if np.all(np.isfinite(result.x)):
                 previous = result.x
                 warm_start_iterations += int(result.nit)
-            warm_start_path.append(previous)
+            keyframe_configurations.append(previous)
+            optimized_keyframe_indices.append(sample_index)
 
-        initial_free_trajectory = np.asarray(warm_start_path[1:], dtype=np.float64)
+        keyframe_configurations = np.asarray(keyframe_configurations, dtype=np.float64)
+        optimized_keyframe_indices = np.asarray(optimized_keyframe_indices)
+        sample_indices = np.arange(target_positions.shape[0])
+        initial_trajectory = np.column_stack(
+            [
+                np.interp(
+                    sample_indices,
+                    optimized_keyframe_indices,
+                    keyframe_configurations[:, joint_index],
+                )
+                for joint_index in range(self.lower_limits.size)
+            ]
+        )
+        initial_free_trajectory = initial_trajectory[1:]
         free_point_count = initial_free_trajectory.shape[0]
 
         def trajectory_objective(flat_trajectory):

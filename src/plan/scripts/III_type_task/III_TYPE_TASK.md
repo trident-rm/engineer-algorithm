@@ -11,15 +11,17 @@ Type-III tasks include insertion and constrained sliding, plus the P-axis and Q-
 Its design pipeline is:
 
 ```text
-Task geometry -> target position/axis samples -> sequential warm start
--> joint trajectory optimization -> executable trajectory
+Task geometry -> target position/axis samples -> keyframe warm start
+-> joint-space interpolation -> joint trajectory optimization -> executable trajectory
 ```
 
 The implementation accepts target positions and target TCP-X axes and enforces them at every supplied sample. Rotation about TCP-X is left unconstrained by the axis-alignment cost.
 
 ## Planner API
 
-`TypeIIIPlanner(robot, link_index, weights=None).plan(start_joint_positions, target_positions, target_axes)` performs a sequential warm start followed by joint-trajectory optimization. Position and TCP-X alignment costs apply at every supplied sample. Approach, Insert, Slide, Turn P, and Turn Q are represented as one interpolated Type-III task path. The Hover endpoint uses 10x position and TCP-X weights; Turn endpoints use the same weights as their other samples.
+`TypeIIIPlanner(robot, link_index, weights=None).plan(start_joint_positions, target_positions, target_axes)` optimizes a warm start at every fifth sample and at the final sample, interpolates those joint configurations to initialize the full trajectory, then performs joint-trajectory optimization. Position and TCP-X alignment costs apply at every supplied sample in both the global objective and reported errors. Approach, Insert, Slide, Turn P, and Turn Q are represented as one interpolated Type-III task path. The Hover endpoint uses 10x position and TCP-X weights; Turn endpoints use the same weights as their other samples.
+
+The end-to-end demo runs the initial-pose IK and compiles the planner objectives at startup for the configured default weights and sample count. It reuses that planner on the first plan; changing weights or the samples-per-stage setting can require a separate JAX compilation the first time that configuration is used.
 
 
 ## Why MoveIt Cartesian Planning Fails
@@ -338,7 +340,7 @@ Only assembly-relevant constraints should be enforced.
 
 ## Current Optimizer Scope
 
-The current implementation is concentrated in `III_type_task_optimizer.py` and exposes `TypeIIIPlanner`, which performs sequential warm-start solves followed by full joint-trajectory optimization.
+The current implementation is concentrated in `III_type_task_planner.py` and exposes `TypeIIIPlanner`, which performs keyframe warm-start solves followed by full joint-trajectory optimization.
 
 The objective terms are position tracking, TCP-X alignment, joint smoothness, soft joint limits, and optional translational manipulability. Manipulability is disabled by default (weight `0`) to avoid Jacobian evaluations; set its weight above `0` to enable it. Collision checking is not implemented.
 
@@ -356,17 +358,19 @@ For every task parameter:
 
 θN
 
-Solve:
+Optimize every fifth sample as a warm-start keyframe (always including the final sample):
 
 q0
 
-q1 using q0 as warm start
+q5 using q0 as warm start
 
-q2 using q1 as warm start
+q10 using q5 as warm start
 
 ...
 
 qN
+
+Linearly interpolate the keyframe joint configurations to initialize q1 through qN-1. The global trajectory optimizer still evaluates and optimizes every supplied sample.
 
 Advantages:
 

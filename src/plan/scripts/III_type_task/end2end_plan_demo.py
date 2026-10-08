@@ -274,6 +274,34 @@ def main():
             start_cfg[index] = -1.6
 
     initial_position, initial_wxyz = _fk_pose(robot, ee_index, start_cfg)
+    startup_weights = CostWeights(
+        position=float(np.clip(args.position_weight, 0, 10)),
+        axis_alignment=float(np.clip(args.axis_weight, 0, 10)),
+        smoothness=float(np.clip(args.smoothness_weight, 0, 10)),
+        joint_limit=float(np.clip(args.joint_limit_weight, 0, 10)),
+        manipulability=float(np.clip(args.manipulability_weight, 0, 10)),
+    )
+    startup_planner = TypeIIIPlanner(robot, ee_index, weights=startup_weights)
+    startup_started = time.perf_counter()
+    startup_ik_solution = np.asarray(
+        pyroki_snippets.solve_ik(
+            robot=robot,
+            target_link_name=args.ee_link,
+            target_position=initial_position,
+            target_wxyz=initial_wxyz,
+        ),
+        dtype=np.float64,
+    )
+    startup_planner.warm_up(
+        start_cfg,
+        sample_count=5 * int(np.clip(args.steps, 3, 20)) + 1,
+    )
+    startup_elapsed = time.perf_counter() - startup_started
+    print(
+        "Completed startup IK/JAX warm-up in "
+        f"{startup_elapsed:.2f} s; first plan uses the warmed default settings."
+    )
+    planner_cache = {startup_weights: startup_planner}
 
     import viser
     from viser.extras import ViserUrdf
@@ -434,6 +462,7 @@ def main():
 
     @plan_button.on_click
     def _(_event):
+        planning_started = time.perf_counter()
         plan_button.disabled = True
         clear_plan()
         status.value = "Solving start IK and generating Hover/Insert/Slide/P/Q targets..."
@@ -452,7 +481,10 @@ def main():
                 joint_limit=float(joint_limit_weight_slider.value),
                 manipulability=float(manipulability_weight_slider.value),
             )
-            active_planner = TypeIIIPlanner(robot, ee_index, weights=active_weights)
+            active_planner = planner_cache.get(active_weights)
+            if active_planner is None:
+                active_planner = TypeIIIPlanner(robot, ee_index, weights=active_weights)
+                planner_cache[active_weights] = active_planner
             requested_position = np.asarray(start_pose_control.position, dtype=np.float64)
             requested_wxyz = np.asarray(start_pose_control.wxyz, dtype=np.float64)
             if not np.all(np.isfinite(requested_position)) or not np.all(
@@ -460,15 +492,20 @@ def main():
             ):
                 raise ValueError("Dragged TCP pose contains non-finite values")
 
-            candidate_cfg = np.asarray(
-                pyroki_snippets.solve_ik(
-                    robot=robot,
-                    target_link_name=args.ee_link,
-                    target_position=requested_position,
-                    target_wxyz=requested_wxyz,
-                ),
-                dtype=np.float64,
-            )
+            if np.allclose(requested_position, initial_position, atol=1e-8, rtol=0.0) and np.allclose(
+                requested_wxyz, initial_wxyz, atol=1e-8, rtol=0.0
+            ):
+                candidate_cfg = startup_ik_solution.copy()
+            else:
+                candidate_cfg = np.asarray(
+                    pyroki_snippets.solve_ik(
+                        robot=robot,
+                        target_link_name=args.ee_link,
+                        target_position=requested_position,
+                        target_wxyz=requested_wxyz,
+                    ),
+                    dtype=np.float64,
+                )
             start_position, start_wxyz = _fk_pose(robot, ee_index, candidate_cfg)
             ik_position_error = float(np.linalg.norm(start_position - requested_position))
             ik_orientation_error = float(
@@ -578,6 +615,7 @@ def main():
             tcp_path = np.stack(
                 [_fk_pose(robot, ee_index, configuration)[0] for configuration in joint_path]
             )
+            planning_elapsed = time.perf_counter() - planning_started
 
             clear_plan()
             stage_colors = {
@@ -635,7 +673,8 @@ def main():
                 f"-> Q {q_sweep_deg:.0f} deg;\n"
                 f"Type-III optimization {optimizer_status}; "
                 f"{result.optimizer_iterations} iterations; "
-                f"J={result.objective_value:.3f}.\n"
+                f"J={result.objective_value:.3f}; "
+                f"planning time {planning_elapsed:.2f} s.\n"
                 f"{len(joint_path)} samples; "
                 f"max position error {max_position_error * 1000.0:.1f} mm; "
                 f"max TCP-X error {max_axis_error_deg:.2f} deg.\n"
