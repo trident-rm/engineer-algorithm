@@ -1,0 +1,76 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mujoco model="combine_urdf_type3">
+  <compiler angle="radian" />
+  <asset>
+    <mesh name="chassis_link" content_type="model/stl" file="meshes/collision/chassis_link.stl" />
+    <mesh name="base_link" content_type="model/stl" file="meshes/collision/base_link.stl" />
+    <mesh name="link1" content_type="model/stl" file="meshes/collision/link1.stl" />
+    <mesh name="link2" content_type="model/stl" file="meshes/collision/link2.stl" />
+    <mesh name="link3" content_type="model/stl" file="meshes/collision/link3.stl" />
+    <mesh name="link4" content_type="model/stl" file="meshes/collision/link4.stl" />
+    <mesh name="link5" content_type="model/stl" file="meshes/collision/link5.stl" />
+    <mesh name="link6" content_type="model/stl" file="meshes/collision/link6.stl" />
+    <mesh name="chassis_link_visual" file="meshes/visual/chassis_link_visual.stl" />
+    <mesh name="base_link_visual" file="meshes/visual/base_link_visual.stl" />
+    <mesh name="link1_visual" file="meshes/visual/link1_visual.stl" />
+    <mesh name="link2_visual" file="meshes/visual/link2_visual.stl" />
+    <mesh name="link3_visual" file="meshes/visual/link3_visual.stl" />
+    <mesh name="link4_visual" file="meshes/visual/link4_visual.stl" />
+    <mesh name="link5_visual" file="meshes/visual/link5_visual.stl" />
+    <mesh name="link6_visual" file="meshes/visual/link6_visual.stl" />
+  </asset>
+  <worldbody>
+    <geom name="chassis_link_hull" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="chassis_link" contype="1" conaffinity="0" />
+    <geom name="base_link_hull" pos="0.23371 0 0.088788" quat="0.999931 0 0 0.0117492" type="mesh" rgba="1 1 1 1" mesh="base_link" contype="1" conaffinity="0" />
+    <geom name="simulation_core_box" size="0.07 0.03 0.03" pos="0.45 0 0.4" type="box" />
+    <body name="link1" pos="0.23371 0 0.099588" quat="0.999931 0 0 0.0117492">
+      <inertial pos="0.000515726 -0.00604666 0.0470312" quat="0.499535 0.500459 0.499464 0.500541" mass="0.636511" diaginertia="0.000813673 0.000619622 0.000595423" />
+      <joint name="joint1" pos="0 0 0" axis="0 0 1" range="-2.3562 2.3562" />
+      <geom name="link1_hull" type="mesh" rgba="0.866667 0.909804 1 1" mesh="link1" contype="1" conaffinity="0" />
+      <body name="link2" pos="0 0.062 0.0572" quat="0.499998 0.5 -0.5 0.500002">
+        <inertial pos="-0.000227182 0.283789 0.0334192" quat="0.501025 0.501757 -0.498514 0.498696" mass="0.815957" diaginertia="0.00495815 0.0047132 0.000430813" />
+        <joint name="joint2" pos="0 0 0" axis="0 0 -1" range="0.29671 2.8448" />
+        <geom name="link2_hull" type="mesh" rgba="0.866667 0.909804 1 0.25" mesh="link2" contype="1" conaffinity="0" />
+        <body name="link3" pos="0 0.38 0.003">
+          <inertial pos="0.0410722 0.000683856 0.0584702" quat="0 0.704578 0 0.709627" mass="0.390686" diaginertia="0.000509771 0.000460457 0.000334661" />
+          <joint name="joint3" pos="0 0 0" axis="0 0 -1" range="-1.274 1.047" />
+          <geom name="link3_hull" type="mesh" rgba="0.698039 0.698039 0.698039 1" mesh="link3" contype="1" conaffinity="0" />
+          <body name="link4" pos="0.095 0 0.05875" quat="0.499998 -0.5 0.500002 -0.5">
+            <inertial pos="5.81626e-07 0.0067839 0.030793" quat="0.707125 7.30266e-05 5.34152e-05 0.707089" mass="0.377655" diaginertia="0.000380898 0.000299833 0.000273601" />
+            <joint name="joint4" pos="0 0 0" axis="0 0 -1" range="-3.1416 3.1416" />
+            <geom name="link4_hull" type="mesh" rgba="0.866667 0.909804 1 1" mesh="link4" contype="1" conaffinity="0" />
+            <body name="link5" pos="0 0.051 0.1455" quat="0.499998 0.5 -0.5 0.500002">
+              <inertial pos="-0.00550366 -3.41361e-05 0.0433009" quat="0.999086 -0.04253 0.000899771 0.00409823" mass="0.277157" diaginertia="0.000107965 7.56945e-05 7.41453e-05" />
+              <joint name="joint5" pos="0 0 0" axis="0 0 -1" range="-1.74533 1.74533" />
+              <geom name="link5_hull" type="mesh" rgba="1 1 1 1" mesh="link5" contype="1" conaffinity="0" />
+              <body name="link6" pos="0.044798 0.00037066 0.051" quat="0.499998 -0.5 0.500002 -0.5">
+                <inertial pos="-0.00367525 -1.27631e-05 0.0722077" quat="0.677825 0.675512 -0.206761 0.203684" mass="0.76078" diaginertia="0.000878346 0.000656 0.000434642" />
+                <joint name="joint6" pos="0 0 0" axis="-0.00827357 0 0.999966" range="-3.1416 3.1416" />
+                <geom name="link6_hull" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="link6" contype="1" conaffinity="0" />
+                <geom pos="0 0 0" quat="1 0 0 0" name="link6_visual" type="mesh" mesh="link6_visual" rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" contype="0" conaffinity="0" group="2" mass="0" />
+                <site name="tcp_site_gripper" size="0.004" pos="-0.019511 -0.00016032 0.16996" quat="0.922288827693 0.000139497956544 -0.386501213511 0.000332877109589" />
+              </body>
+              <geom pos="0 0 0" quat="1 0 0 0" name="link5_visual" type="mesh" mesh="link5_visual" rgba="1 1 1 1" contype="0" conaffinity="0" group="2" mass="0" />
+            </body>
+            <geom pos="0 0 0" quat="1 0 0 0" name="link4_visual" type="mesh" mesh="link4_visual" rgba="0.866666666666667 0.909803921568627 1 1" contype="0" conaffinity="0" group="2" mass="0" />
+          </body>
+          <geom pos="0 0 0" quat="1 0 0 0" name="link3_visual" type="mesh" mesh="link3_visual" rgba="0.698039215686274 0.698039215686274 0.698039215686274 1" contype="0" conaffinity="0" group="2" mass="0" />
+        </body>
+        <geom pos="0 0 0" quat="1 0 0 0" name="link2_visual" type="mesh" mesh="link2_visual" rgba="0.866666666666667 0.909803921568627 1 0.25" contype="0" conaffinity="0" group="2" mass="0" />
+      </body>
+      <geom pos="0 0 0" quat="1 0 0 0" name="link1_visual" type="mesh" mesh="link1_visual" rgba="0.866666666666667 0.909803921568627 1 1" contype="0" conaffinity="0" group="2" mass="0" />
+    </body>
+    <geom name="chassis_link_visual" type="mesh" mesh="chassis_link_visual" rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" contype="0" conaffinity="0" group="2" mass="0" />
+    <geom pos="0.23371 0 0.088788" quat="0.999931 0 0 0.0117492" name="base_link_visual" type="mesh" mesh="base_link_visual" rgba="1 1 1 1" contype="0" conaffinity="0" group="2" mass="0" />
+    <geom name="simulation_ground" type="plane" size="2 2 0.1" pos="0 0 -0.25" friction="0.8 0.02 0.002" rgba="0.35 0.35 0.35 1" contype="0" conaffinity="1" />
+  </worldbody>
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast" />
+  <actuator>
+    <position name="joint1_position" joint="joint1" kp="100" kv="20" ctrlrange="-2.3562 2.3562" ctrllimited="true" forcerange="-40 40" forcelimited="true" />
+    <position name="joint2_position" joint="joint2" kp="100" kv="20" ctrlrange="0.29671 2.8448" ctrllimited="true" forcerange="-40 40" forcelimited="true" />
+    <position name="joint3_position" joint="joint3" kp="100" kv="20" ctrlrange="-1.274 1.047" ctrllimited="true" forcerange="-40 40" forcelimited="true" />
+    <position name="joint4_position" joint="joint4" kp="100" kv="20" ctrlrange="-3.1416 3.1416" ctrllimited="true" forcerange="-40 40" forcelimited="true" />
+    <position name="joint5_position" joint="joint5" kp="100" kv="20" ctrlrange="-1.74533 1.74533" ctrllimited="true" forcerange="-40 40" forcelimited="true" />
+    <position name="joint6_position" joint="joint6" kp="100" kv="20" ctrlrange="-3.1416 3.1416" ctrllimited="true" forcerange="-40 40" forcelimited="true" />
+  </actuator>
+</mujoco>

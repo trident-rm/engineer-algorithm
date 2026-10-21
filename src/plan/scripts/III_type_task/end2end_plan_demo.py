@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-CORE_WORLD_CENTER = np.array([0.7, 0.0, 0.4], dtype=np.float64)
+CORE_WORLD_CENTER = np.array([0.45, 0.0, 0.4], dtype=np.float64)
 CORE_POSITION_HALF_RANGES = np.array([0.05, 0.1, 0.1], dtype=np.float64)
 
 
@@ -112,37 +112,49 @@ def _quaternion_error_rad(actual_wxyz, target_wxyz):
     return 2.0 * np.arccos(dot)
 
 
-def _axis_rotation_matrix(axis, angle):
-    axis = np.asarray(axis, dtype=np.float64)
-    axis /= np.linalg.norm(axis)
-    cross = np.array(
+def _core_from_parameters(center, theta, phi, alpha):
+    q_axis = np.array(
         [
-            [0.0, -axis[2], axis[1]],
-            [axis[2], 0.0, -axis[0]],
-            [-axis[1], axis[0], 0.0],
+            -np.sin(phi) * np.cos(theta),
+            -np.sin(phi) * np.sin(theta),
+            np.cos(phi),
+        ],
+        dtype=np.float64,
+    )
+    p_axis = np.array(
+        [np.sin(theta), -np.cos(theta), 0.0],
+        dtype=np.float64,
+    )
+    up_axis = np.cross(q_axis, p_axis)
+    cos_alpha = np.cos(alpha)
+    sin_alpha = np.sin(alpha)
+    rotation = np.column_stack(
+        [
+            q_axis,
+            cos_alpha * p_axis + sin_alpha * up_axis,
+            -sin_alpha * p_axis + cos_alpha * up_axis,
         ]
     )
-    return np.eye(3) + np.sin(angle) * cross + (1.0 - np.cos(angle)) * (cross @ cross)
-
-
-def _sample_random_core(rng):
-    center = CORE_WORLD_CENTER + rng.uniform(
-        -CORE_POSITION_HALF_RANGES, CORE_POSITION_HALF_RANGES
-    )
-    roll = rng.uniform(-np.pi / 6.0, np.pi / 6.0)
-    pitch = rng.uniform(-np.pi / 6.0, 0.0)
-    yaw = rng.uniform(-np.deg2rad(80.0), np.deg2rad(80.0))
-    rotation_x = _axis_rotation_matrix([1.0, 0.0, 0.0], roll)
-    rotation_y = _axis_rotation_matrix([0.0, 1.0, 0.0], pitch)
-    rotation_z = _axis_rotation_matrix([0.0, 0.0, 1.0], yaw + np.pi)
-    rotation = rotation_z @ rotation_y @ rotation_x
     return {
         "center": center,
         "q_axis": rotation[:, 0],
         "p_axis": rotation[:, 1],
         "up_axis": rotation[:, 2],
         "rotation": rotation,
+        "theta": theta,
+        "phi": phi,
+        "alpha": alpha,
     }
+
+
+def _sample_random_core(rng):
+    center = CORE_WORLD_CENTER + rng.uniform(
+        -CORE_POSITION_HALF_RANGES, CORE_POSITION_HALF_RANGES
+    )
+    theta = rng.uniform(-np.pi / 2.0, np.pi / 2.0)
+    phi = rng.uniform(0.0, np.pi / 2.0)
+    alpha = rng.uniform(-np.pi / 4.0, np.pi / 4.0)
+    return _core_from_parameters(center, theta, phi, alpha)
 
 
 def _hover_tcp_x_frame(q_axis):
@@ -226,9 +238,9 @@ def main():
     parser.add_argument("--steps", type=int, default=8, help="Samples per pipeline stage")
     parser.add_argument("--port", type=int, default=8082)
     parser.add_argument("--position-weight", type=float, default=1.0)
-    parser.add_argument("--axis-weight", type=float, default=1.0)
-    parser.add_argument("--smoothness-weight", type=float, default=1.0)
-    parser.add_argument("--joint-limit-weight", type=float, default=1.0)
+    parser.add_argument("--axis-weight", type=float, default=1.55)
+    parser.add_argument("--smoothness-weight", type=float, default=0.0)
+    parser.add_argument("--joint-limit-weight", type=float, default=0.0)
     parser.add_argument("--manipulability-weight", type=float, default=0.0)
     args = parser.parse_args()
 
@@ -353,6 +365,31 @@ def main():
         disabled=True,
     )
     random_core_button = server.gui.add_button("Generate random core")
+    theta_input = server.gui.add_number(
+        "Core theta (deg)",
+        initial_value=float(np.rad2deg(core_state["theta"])),
+        min=-90.0,
+        max=90.0,
+        step=1.0,
+        hint="Azimuth parameter; range -90 to 90 degrees.",
+    )
+    phi_input = server.gui.add_number(
+        "Core phi (deg)",
+        initial_value=float(np.rad2deg(core_state["phi"])),
+        min=0.0,
+        max=90.0,
+        step=1.0,
+        hint="Angle from world +Z; range 0 to 90 degrees.",
+    )
+    alpha_input = server.gui.add_number(
+        "Core alpha (deg)",
+        initial_value=float(np.rad2deg(core_state["alpha"])),
+        min=-45.0,
+        max=45.0,
+        step=1.0,
+        hint="Counter-clockwise roll about core local X; range -45 to 45 degrees.",
+    )
+    apply_core_orientation_button = server.gui.add_button("Apply core orientation")
     radius_slider = server.gui.add_slider(
         "Radius (m)", min=0.005, max=0.20, step=0.005,
         initial_value=float(np.clip(args.radius, 0.005, 0.20)),
@@ -450,10 +487,46 @@ def main():
         core_box.wxyz = core_wxyz
         core_frame.position = core_state["center"]
         core_frame.wxyz = core_wxyz
+        theta_input.value = float(np.rad2deg(core_state["theta"]))
+        phi_input.value = float(np.rad2deg(core_state["phi"]))
+        alpha_input.value = float(np.rad2deg(core_state["alpha"]))
         clear_plan()
         status.value = (
             "Random core regenerated at "
             f"{np.array2string(core_state['center'], precision=3)}"
+        )
+
+    @apply_core_orientation_button.on_click
+    def _(_event):
+        nonlocal core_state
+        angles_deg = (
+            float(theta_input.value),
+            float(phi_input.value),
+            float(alpha_input.value),
+        )
+        limits_deg = ((-90.0, 90.0), (0.0, 90.0), (-45.0, 45.0))
+        if any(
+            not np.isfinite(value) or value < lower or value > upper
+            for value, (lower, upper) in zip(angles_deg, limits_deg)
+        ):
+            status.value = "Core angles out of range: theta [-90, 90], phi [0, 90], alpha [-45, 45] degrees."
+            return
+        theta_deg, phi_deg, alpha_deg = angles_deg
+        core_state = _core_from_parameters(
+            core_state["center"],
+            np.deg2rad(theta_deg),
+            np.deg2rad(phi_deg),
+            np.deg2rad(alpha_deg),
+        )
+        core_wxyz = np.asarray(
+            jaxlie.SO3.from_matrix(jnp.asarray(core_state["rotation"])).wxyz
+        )
+        core_box.wxyz = core_wxyz
+        core_frame.wxyz = core_wxyz
+        clear_plan()
+        status.value = (
+            "Applied core orientation: "
+            f"theta={theta_deg:.1f}, phi={phi_deg:.1f}, alpha={alpha_deg:.1f} deg"
         )
 
     @step_slider.on_update

@@ -15,6 +15,11 @@ import numpy as np
 INPUT_FIELDS = [
     "case_id",
     "seed",
+    "core_position_parameterization",
+    "orientation_parameterization",
+    "theta_rad",
+    "phi_rad",
+    "alpha_rad",
     "core_pose",
     "core_x_m",
     "core_y_m",
@@ -26,13 +31,22 @@ INPUT_FIELDS = [
     "turn_p_sweep_deg",
     "turn_q_sweep_deg",
     "steps_per_stage",
+    "position_weight",
+    "axis_weight",
+    "smoothness_weight",
+    "joint_limit_weight",
+    "manipulability_weight",
     "position_tolerance_mm",
     "tcp_x_tolerance_deg",
 ]
 STAGE_NAMES = ("approach", "insert", "slide", "turn_p", "turn_q")
+CORE_POSITION_PARAMETERIZATION = "robomaster_core_center_xyz_mm_v1"
+ORIENTATION_PARAMETERIZATION = "robomaster_theta_phi_alpha_axis_sequence_ccw_v4"
 OUTPUT_FIELDS = [
     "status",
     "optimizer_success",
+    "average_quality_pass",
+    "peak_quality_pass",
     "quality_pass",
     "optimizer_iterations",
     "sample_count",
@@ -86,7 +100,13 @@ def _write_cases(path, rows):
 def _write_summary(path, rows, args):
     completed = [row for row in rows if row.get("status") not in ("", "pending")]
     successes = [row for row in completed if row.get("status") == "success"]
-    quality_passes = [row for row in completed if row.get("quality_pass") == "true"]
+    average_quality_passes = [
+        row for row in completed if row.get("average_quality_pass") == "true"
+    ]
+    peak_quality_passes = [
+        row for row in completed if row.get("peak_quality_pass") == "true"
+    ]
+    quality_passes = peak_quality_passes
     metrics = [
         ("requested_cases", args.cases, "cases"),
         ("completed_cases", len(completed), "cases"),
@@ -97,6 +117,18 @@ def _write_summary(path, rows, args):
             "%",
         ),
         ("planning_error_cases", sum(row.get("status") == "planning_error" for row in completed), "cases"),
+        ("average_error_pass_cases", len(average_quality_passes), "cases"),
+        (
+            "average_error_pass_rate_pct",
+            100.0 * len(average_quality_passes) / len(completed) if completed else 0.0,
+            "%",
+        ),
+        ("peak_error_pass_cases", len(peak_quality_passes), "cases"),
+        (
+            "peak_error_pass_rate_pct",
+            100.0 * len(peak_quality_passes) / len(completed) if completed else 0.0,
+            "%",
+        ),
         ("task_quality_pass_cases", len(quality_passes), "cases"),
         (
             "task_quality_pass_rate_pct",
@@ -105,6 +137,13 @@ def _write_summary(path, rows, args):
         ),
         ("position_tolerance_mm", args.position_tolerance_mm, "mm"),
         ("tcp_x_tolerance_deg", args.tcp_x_tolerance_deg, "deg"),
+        ("position_weight", args.position_weight, ""),
+        ("axis_weight", args.axis_weight, ""),
+        ("core_position_parameterization", CORE_POSITION_PARAMETERIZATION, ""),
+        ("orientation_parameterization", ORIENTATION_PARAMETERIZATION, ""),
+        ("smoothness_weight", args.smoothness_weight, ""),
+        ("joint_limit_weight", args.joint_limit_weight, ""),
+        ("manipulability_weight", args.manipulability_weight, ""),
         ("seed", args.seed, ""),
         ("steps_per_stage", args.steps, "samples"),
     ]
@@ -189,6 +228,47 @@ def _read_cases(path):
     return rows
 
 
+def _validate_case_configuration(rows, args):
+    expected = {
+        "core_position_parameterization": CORE_POSITION_PARAMETERIZATION,
+        "orientation_parameterization": ORIENTATION_PARAMETERIZATION,
+        "steps_per_stage": float(args.steps),
+        "radius_m": args.radius,
+        "hover_distance_m": args.hover_distance,
+        "slide_distance_m": args.slide_distance,
+        "turn_p_sweep_deg": args.turn_p_sweep_deg,
+        "turn_q_sweep_deg": args.turn_q_sweep_deg,
+        "position_weight": args.position_weight,
+        "axis_weight": args.axis_weight,
+        "smoothness_weight": args.smoothness_weight,
+        "joint_limit_weight": args.joint_limit_weight,
+        "manipulability_weight": args.manipulability_weight,
+    }
+    mismatches = []
+    for row in rows:
+        for field, expected_value in expected.items():
+            raw_value = row.get(field, "")
+            matches = (
+                raw_value == expected_value
+                if field == "orientation_parameterization"
+                else raw_value not in ("", None)
+                and np.isclose(
+                    float(raw_value), expected_value, rtol=0.0, atol=1e-12
+                )
+            )
+            if not matches:
+                mismatches.append(field)
+                break
+        if mismatches:
+            break
+    if mismatches:
+        raise ValueError(
+            f"{args.csv} contains cases with missing or different planning settings "
+            f"(first mismatch: {mismatches[0]}). Use a new --csv path for this "
+            "configuration; existing results were not changed."
+        )
+
+
 def _make_cases(demo, count, seed, start_cfg, args):
     rng = np.random.default_rng(seed)
     cases = []
@@ -202,6 +282,11 @@ def _make_cases(demo, count, seed, start_cfg, args):
             {
                 "case_id": f"case-{case_index + 1:04d}",
                 "seed": seed,
+                "core_position_parameterization": CORE_POSITION_PARAMETERIZATION,
+                "orientation_parameterization": ORIENTATION_PARAMETERIZATION,
+                "theta_rad": core["theta"],
+                "phi_rad": core["phi"],
+                "alpha_rad": core["alpha"],
                 "core_pose": _json(core_pose),
                 "core_x_m": core["center"][0],
                 "core_y_m": core["center"][1],
@@ -213,6 +298,11 @@ def _make_cases(demo, count, seed, start_cfg, args):
                 "turn_p_sweep_deg": args.turn_p_sweep_deg,
                 "turn_q_sweep_deg": args.turn_q_sweep_deg,
                 "steps_per_stage": args.steps,
+                "position_weight": args.position_weight,
+                "axis_weight": args.axis_weight,
+                "smoothness_weight": args.smoothness_weight,
+                "joint_limit_weight": args.joint_limit_weight,
+                "manipulability_weight": args.manipulability_weight,
                 "position_tolerance_mm": args.position_tolerance_mm,
                 "tcp_x_tolerance_deg": args.tcp_x_tolerance_deg,
                 "status": "pending",
@@ -365,16 +455,25 @@ def _run_case(
     )
     manipulability = _measure_manipulability(jax, jnp, robot, link_index, joint_path)
 
+    average_quality_pass = (
+        np.mean(position_errors) * 1000.0
+        <= float(row["position_tolerance_mm"])
+        and np.mean(axis_errors_deg) <= float(row["tcp_x_tolerance_deg"])
+        and np.min(margins) >= -1e-8
+    )
+    peak_quality_pass = (
+        np.max(position_errors) * 1000.0
+        <= float(row["position_tolerance_mm"])
+        and np.max(axis_errors_deg) <= float(row["tcp_x_tolerance_deg"])
+        and np.min(margins) >= -1e-8
+    )
     row.update(
         {
             "status": "success" if result.optimizer_success else "optimizer_stopped",
             "optimizer_success": str(bool(result.optimizer_success)).lower(),
-            "quality_pass": str(
-                np.max(position_errors) * 1000.0
-                <= float(row["position_tolerance_mm"])
-                and np.max(axis_errors_deg) <= float(row["tcp_x_tolerance_deg"])
-                and np.min(margins) >= -1e-8
-            ).lower(),
+            "average_quality_pass": str(bool(average_quality_pass)).lower(),
+            "peak_quality_pass": str(bool(peak_quality_pass)).lower(),
+            "quality_pass": str(bool(peak_quality_pass)).lower(),
             "optimizer_iterations": result.optimizer_iterations,
             "sample_count": len(joint_path),
             "objective_value": result.objective_value,
@@ -425,11 +524,21 @@ def _print_summary(rows):
         f"({100.0 * len(successes) / len(completed):.1f}%); "
         f"planning errors: {len(errors)}"
     )
-    quality_passes = [row for row in completed if row.get("quality_pass") == "true"]
+    average_quality_passes = [
+        row for row in completed if row.get("average_quality_pass") == "true"
+    ]
+    peak_quality_passes = [
+        row for row in completed if row.get("peak_quality_pass") == "true"
+    ]
     print(
-        f"Task quality passed (position/orientation/limits): "
-        f"{len(quality_passes)}/{len(completed)} "
-        f"({100.0 * len(quality_passes) / len(completed):.1f}%)"
+        f"Average-error pass (position/orientation/limits): "
+        f"{len(average_quality_passes)}/{len(completed)} "
+        f"({100.0 * len(average_quality_passes) / len(completed):.1f}%)"
+    )
+    print(
+        f"Peak-error pass (position/orientation/limits): "
+        f"{len(peak_quality_passes)}/{len(completed)} "
+        f"({100.0 * len(peak_quality_passes) / len(completed):.1f}%)"
     )
     for field, label in (
         ("elapsed_s", "runtime seconds"),
@@ -457,18 +566,23 @@ def main():
     parser.add_argument(
         "--csv",
         type=Path,
-        default=Path(__file__).with_name("test_result_type_iii.csv"),
+        default=Path(__file__).with_name("test_result_type_iii_demo_aligned.csv"),
     )
     parser.add_argument("--cases", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=20260930)
-    parser.add_argument("--steps", type=int, default=3, help="samples per path stage")
-    parser.add_argument("--radius", type=float, default=0.03)
+    parser.add_argument("--steps", type=int, default=8, help="samples per path stage")
+    parser.add_argument("--radius", type=float, default=0.1)
     parser.add_argument("--hover-distance", type=float, default=0.20)
     parser.add_argument("--slide-distance", type=float, default=0.10)
     parser.add_argument("--turn-p-sweep-deg", type=float, default=90.0)
     parser.add_argument("--turn-q-sweep-deg", type=float, default=60.0)
+    parser.add_argument("--position-weight", type=float, default=1.0)
+    parser.add_argument("--axis-weight", type=float, default=1.55)
+    parser.add_argument("--smoothness-weight", type=float, default=0.0)
+    parser.add_argument("--joint-limit-weight", type=float, default=0.0)
+    parser.add_argument("--manipulability-weight", type=float, default=0.0)
     parser.add_argument("--position-tolerance-mm", type=float, default=50.0)
-    parser.add_argument("--tcp-x-tolerance-deg", type=float, default=10.0)
+    parser.add_argument("--tcp-x-tolerance-deg", type=float, default=30.0)
     parser.add_argument("--ee-link", default="gripper")
     parser.add_argument("--urdf", type=Path, default=Path(
         "/home/hku/robo_arm/src/arms/combine_urdf/urdf/combine_urdf.urdf"
@@ -477,15 +591,29 @@ def main():
     parser.add_argument("--checkpoint-every", type=int, default=10)
     parser.add_argument("--retry-failed", action="store_true")
     args = parser.parse_args()
-    if args.cases <= 0 or args.steps < 1 or args.checkpoint_every <= 0:
-        parser.error("cases/checkpoint-every must be positive and steps must be at least 1")
+    if args.cases <= 0 or not 3 <= args.steps <= 20 or args.checkpoint_every <= 0:
+        parser.error(
+            "cases/checkpoint-every must be positive and steps must be between 3 and 20"
+        )
     if args.limit is not None and args.limit <= 0:
         parser.error("limit must be positive")
+    configured_weights = (
+        args.position_weight,
+        args.axis_weight,
+        args.smoothness_weight,
+        args.joint_limit_weight,
+        args.manipulability_weight,
+    )
+    if any(
+        not np.isfinite(weight) or weight < 0.0 or weight > 10.0
+        for weight in configured_weights
+    ):
+        parser.error("normalized weights must be finite and between 0 and 10")
 
     import end2end_plan_demo as demo
 
     demo._patch_numpy_asarray_copy_kwarg()
-    robot, _, _ = demo._load_robot(args.urdf.expanduser().resolve())
+    robot, _, pyroki_snippets = demo._load_robot(args.urdf.expanduser().resolve())
     import jax
     import jax.numpy as jnp
     import jaxlie
@@ -505,24 +633,71 @@ def main():
             start_cfg[index] = 0.5
         elif joint_name == "joint5":
             start_cfg[index] = -1.6
+    start_position, start_wxyz = demo._fk_pose(robot, link_index, start_cfg)
+    start_cfg = np.asarray(
+        pyroki_snippets.solve_ik(
+            robot=robot,
+            target_link_name=args.ee_link,
+            target_position=start_position,
+            target_wxyz=start_wxyz,
+        ),
+        dtype=np.float64,
+    )
+    resolved_start_position, resolved_start_wxyz = demo._fk_pose(
+        robot, link_index, start_cfg
+    )
+    start_position_error = float(
+        np.linalg.norm(resolved_start_position - start_position)
+    )
+    start_orientation_error = float(
+        demo._quaternion_error_rad(resolved_start_wxyz, start_wxyz)
+    )
+    if start_position_error > 0.005 or start_orientation_error > np.deg2rad(3.0):
+        raise RuntimeError(
+            "Default start pose has no accurate IK solution: "
+            f"position error={start_position_error:.4f} m, "
+            f"orientation error={np.rad2deg(start_orientation_error):.2f} deg"
+        )
 
     rows = _read_cases(args.csv)
     if not rows:
         rows = _make_cases(demo, args.cases, args.seed, start_cfg, args)
         _write_cases(args.csv, rows)
         print(f"Generated {len(rows)} deterministic core-pose cases (seed={args.seed}).")
+    else:
+        _validate_case_configuration(rows, args)
     for row in rows:
         row["position_tolerance_mm"] = args.position_tolerance_mm
         row["tcp_x_tolerance_deg"] = args.tcp_x_tolerance_deg
         if row.get("max_position_error_mm") not in ("", None):
-            row["quality_pass"] = str(
+            average_quality_pass = (
+                float(row["mean_position_error_mm"])
+                <= float(row["position_tolerance_mm"])
+                and float(row["mean_tcp_x_error_deg"])
+                <= float(row["tcp_x_tolerance_deg"])
+                and float(row["min_joint_limit_margin_deg"]) >= -1e-8
+            )
+            peak_quality_pass = (
                 float(row["max_position_error_mm"])
                 <= float(row["position_tolerance_mm"])
                 and float(row["max_tcp_x_error_deg"])
                 <= float(row["tcp_x_tolerance_deg"])
                 and float(row["min_joint_limit_margin_deg"]) >= -1e-8
-            ).lower()
-    planner = TypeIIIPlanner(robot, link_index, weights=CostWeights())
+            )
+            row["average_quality_pass"] = str(average_quality_pass).lower()
+            row["peak_quality_pass"] = str(peak_quality_pass).lower()
+            row["quality_pass"] = str(peak_quality_pass).lower()
+    planner = TypeIIIPlanner(
+        robot,
+        link_index,
+        weights=CostWeights(
+            position=args.position_weight,
+            axis_alignment=args.axis_weight,
+            smoothness=args.smoothness_weight,
+            joint_limit=args.joint_limit_weight,
+            manipulability=args.manipulability_weight,
+        ),
+    )
     retryable_statuses = {"optimizer_stopped", "planning_error"}
     pending = [
         row
@@ -532,6 +707,17 @@ def main():
     ]
     if args.limit is not None:
         pending = pending[: args.limit]
+
+    warmup_started = time.perf_counter()
+    for steps_per_stage in sorted(
+        {int(row["steps_per_stage"]) for row in pending}
+    ):
+        planner.warm_up(start_cfg, sample_count=5 * steps_per_stage + 1)
+    if pending:
+        print(
+            "Completed planner JAX warm-up in "
+            f"{time.perf_counter() - warmup_started:.2f} s."
+        )
 
     print(f"Running {len(pending)} cases; each path uses {args.steps} samples per stage.")
     try:

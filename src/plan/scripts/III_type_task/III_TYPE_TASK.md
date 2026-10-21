@@ -19,10 +19,40 @@ The implementation accepts target positions and target TCP-X axes and enforces t
 
 ## Planner API
 
-`TypeIIIPlanner(robot, link_index, weights=None).plan(start_joint_positions, target_positions, target_axes)` optimizes a warm start at every fifth sample and at the final sample, interpolates those joint configurations to initialize the full trajectory, then performs joint-trajectory optimization. Position and TCP-X alignment costs apply at every supplied sample in both the global objective and reported errors. Approach, Insert, Slide, Turn P, and Turn Q are represented as one interpolated Type-III task path. The Hover endpoint uses 10x position and TCP-X weights; Turn endpoints use the same weights as their other samples.
+`TypeIIIPlanner(robot, link_index, weights=None).plan(start_joint_positions, target_positions, target_axes)` optimizes a warm start at every fifth sample and at the final sample, interpolates those joint configurations to initialize the full trajectory, then performs joint-trajectory optimization. Position and TCP-X alignment costs apply at every supplied sample in both the global objective and reported errors. Approach, Insert, Slide, Turn P, and Turn Q are represented as one interpolated Type-III task path. The current demo applies a 10x per-waypoint multiplier at the Approach/Hover endpoint for both position and TCP-X; all other waypoints use a multiplier of 1. Global cost weights are shared across the whole path.
 
-The end-to-end demo runs the initial-pose IK and compiles the planner objectives at startup for the configured default weights and sample count. It reuses that planner on the first plan; changing weights or the samples-per-stage setting can require a separate JAX compilation the first time that configuration is used.
+The end-to-end demo runs the initial-pose IK and compiles the planner objectives at startup for the configured default weights and sample count. It reuses that planner on the first plan; changing weights or the samples-per-stage setting can require a separate JAX compilation the first time that configuration is used. The robustness test uses the same default path resolution and planner weights as the demo: 8 intervals per stage (41 path samples total), 0.1 m radius, position weight `1.0`, TCP-X weight `1.55`, and zero weights for smoothness, joint limits, and manipulability. The TCP-X weight was tuned against both average- and peak-error pass rates at 3 intervals per stage; it improves the stricter peak-error rate on the tested cases, while intentionally prioritizing axis accuracy over the equal-normalized 1 cm/5 degree balance. The test accepts matching `--*-weight` options and records the selected weights in its summary. It reports separate average- and peak-error pass flags; the legacy `quality_pass` field remains an alias for peak-error pass. It resolves the demo's default start TCP pose with IK and pre-warms the planner for the full five-stage path before timing cases; randomized core poses and post-plan quality/robustness measurements are specific to the test.
 
+
+## Implemented Objective and Weighting
+
+The planner's task-space terms are normalized before applying their global cost weights:
+
+```text
+position_error = ||tcp_position - target_position||_2
+position_cost = position_error^2 / (0.01 m)^2
+
+axis_error = acos(clip(dot(tcp_x_axis, target_tcp_x_axis), -1, 1))
+axis_cost = (1 - dot(tcp_x_axis, target_tcp_x_axis))
+            / (1 - cos(5 degrees))
+
+trajectory_cost = weighted mean(position_cost per waypoint)
+                + weighted mean(axis_cost per waypoint)
+                + optional smoothness, joint-limit, manipulability terms
+```
+
+`CostWeights.position` and `CostWeights.axis_alignment` are **global multipliers** shared by every trajectory segment and waypoint. `position_weights` and `axis_weights` passed to `plan()` are **per-waypoint multipliers**; they are arrays sized to the full combined path, not one scalar per named segment. The demo/test use `1.0` at every point except the Approach/Hover endpoint, where both arrays are set to `10.0`. The resulting contribution is normalized by the sum of the waypoint multipliers, so the hover point gets greater relative emphasis without multiplying the entire segment by ten.
+
+Defaults in the planner API, demo, and robustness test are position `1.0`, TCP-X `1.55`, and smoothness, joint-limit, and manipulability `0.0`. The TCP-X multiplier `1.55` was selected from finite weight scans to improve peak-error pass rate on the tested configuration; it favors axis accuracy relative to equal normalized weighting. It is an empirical setting, not a universal optimum. The demo GUI can change global weights for a plan, but there are not independent GUI sliders per segment.
+
+### Optimizer stages and result interpretation
+
+1. L-BFGS-B optimizes sparse warm-start keyframes, at five-sample intervals and the final waypoint.
+2. Per-joint linear interpolation expands those keyframes to a full initial trajectory.
+3. A second L-BFGS-B minimizes the objective over every free joint waypoint; the first joint configuration remains fixed.
+4. FK is evaluated for every optimized waypoint to report position and TCP-X residuals.
+
+The returned path is a sequence of joint configurations. This code does not time-parameterize the path, guarantee actuator tracking, perform collision checking, or enforce strict Cartesian error inequalities. `optimizer_success` indicates optimizer termination status, not that task error is small.
 
 ## Why MoveIt Cartesian Planning Fails
 
@@ -263,7 +293,7 @@ Keep trajectories collision-free.
 
 ## Global Objective Function
 
-Total optimization objective:
+The implemented objective is:
 
 J_total =
     w_pos   * J_pos
@@ -271,23 +301,8 @@ J_total =
   + w_smooth * J_smooth
   + w_limit * J_limit
   + w_manip * J_manip
-  + w_collision * J_collision
 
-Example weights:
-
-w_pos = 100
-
-w_axis = 50
-
-w_smooth = 10
-
-w_limit = 5
-
-w_manip = 1
-
-w_collision = 50
-
-Weights should be tuned experimentally.
+There is no collision term in the current implementation. The default weights are `w_pos=1.0`, `w_axis=1.55`, and `w_smooth=w_limit=w_manip=0.0`; demo waypoint multipliers additionally emphasize the Approach/Hover endpoint.
 
 ---
 
@@ -435,13 +450,17 @@ The planner must exploit remaining task redundancy rather than artificially remo
 
 ## Executable Full Pipeline Demo
 
-`end2end_plan_demo.py` generates a randomized core and plans the complete sequence: Approach to Hover, Insert, Slide, Turn P, then Turn Q. The core local X/q axis is based on world `-X` (a 180-degree yaw flip from the old C++ demo). Roll is sampled within +/-30 degrees, yaw within +/-80 degrees, and pitch from -30 to 0 degrees so the local X/q axis never points below the world horizontal plane and remains within 90 degrees of world `-X`. `p/up` are the other rotation-matrix columns.
+`end2end_plan_demo.py` generates a randomized core and plans the complete sequence: Approach to Hover, Insert, Slide, Turn P, then Turn Q. Core orientation is sampled from the RoboMaster Type-III parameters: `theta` uniformly in `[-90°, 90°]`, `phi` in `[0°, 90°]`, and `alpha` in `[-45°, 45°]`. The assembly/local-X direction is `q=[-sin(phi)cos(theta), -sin(phi)sin(theta), cos(phi)]`. The unrolled frame uses `p=[sin(theta), -cos(theta), 0]` and `up=q×p`; consequently at `theta=0`, `phi=90°`, `alpha=0`, local X points along world `-X`, local Y along world `-Y`, and local Z along world `+Z`. The core is then rolled about its current local X by `+alpha` (counter-clockwise when viewed from the positive local-X direction toward the origin), giving `p_axis=cos(alpha)p+sin(alpha)up` and `up_axis=-sin(alpha)p+cos(alpha)up`. The final rotation columns are the core's `q_axis`, `p_axis`, and `up_axis`. The generated task path uses these same axes, so it follows the displayed core orientation.
 
-The core is sampled in an absolute world-coordinate cuboid, independent of the TCP, with a fixed center at (0.70, 0.00, 0.40) m. Position jitter is +/-0.05 m in X and +/-0.10 m in Y and Z. The core local X/q axis points roughly along world -X. Regenerating the core changes its pose but does not move this world-coordinate frame.
+In the Viser GUI, enter `theta`, `phi`, and `alpha` in degrees and click **Apply core orientation** to set the current core's orientation without changing its center. **Generate random core** continues to randomize both center and orientation, and updates the angle inputs to the generated values.
+
+The demo samples the core center around `[0.45, 0.0, 0.40] m` with half-ranges `[0.05, 0.10, 0.10] m`, yielding `X=[0.40, 0.50] m`, `Y=[-0.10, 0.10] m`, and `Z=[0.30, 0.50] m`. This is the current demo sampling box and is independent of the TCP. The assembly axis has non-negative world-Z component by construction. Regenerating the core changes its pose but does not move this world-coordinate frame.
+
+MuJoCo end-to-end simulation is maintained separately under [`src/plan/scripts/mujoco_sim/`](../mujoco_sim/README.md).
 
 ### Type-III API
 
-The task module lives in `src/plan/scripts/III_type_task/`. Use `TypeIIIPlanner` from `III_type_task_optimizer.py`:
+The task module lives in `src/plan/scripts/III_type_task/`. Use `TypeIIIPlanner` from `III_type_task_planner.py`:
 
 ```python
 planner = TypeIIIPlanner(robot, ee_link_index)
@@ -462,7 +481,7 @@ import numpy as np
 planner_dir = Path("/home/hku/robo_arm/src/plan/scripts/III_type_task")
 sys.path.insert(0, str(planner_dir))
 
-from III_type_task_optimizer import CostWeights, TypeIIIPlanner
+from III_type_task_planner import CostWeights, TypeIIIPlanner
 
 ee_link_index = list(robot.links.names).index("gripper")
 planner = TypeIIIPlanner(
@@ -470,9 +489,9 @@ planner = TypeIIIPlanner(
   ee_link_index,
   weights=CostWeights(
     position=1.0,
-    axis_alignment=1.0,
-    smoothness=1.0,
-    joint_limit=1.0,
+    axis_alignment=1.55,
+    smoothness=0.0,
+    joint_limit=0.0,
     manipulability=0.0,
   ),
 )
@@ -506,13 +525,13 @@ The returned `TrajectoryResult` provides `joint_positions`, per-sample `position
 
 ### Normalized optimizer weights
 
-All cost terms are dimensionless averages with interpretable reference scales: 1 cm TCP position error, 5 degree TCP-X error, 0.1 rad RMS joint step, 0.15 rad joint-limit margin, and 0.05 m^3 translational manipulability. Their GUI/CLI weights are relative multipliers in the `0–10` range. Position, TCP-X, smoothness, and joint-limit weights default to `1.0`; manipulability defaults to `0.0` and is not evaluated unless explicitly enabled. A weight of `2` doubles that term's normalized contribution; changing waypoint count does not automatically scale it. Manipulability is a negative reward. The Status text and robustness CSV report each final weighted contribution so tuning can be based on actual objective shares.
+All cost terms are dimensionless averages with interpretable reference scales: 1 cm TCP position error, 5 degree TCP-X error, 0.1 rad RMS joint step, 0.15 rad joint-limit margin, and 0.05 m^3 translational manipulability. Their GUI/CLI weights are relative multipliers in the `0–10` range. The end-to-end demo, robustness test, and `CostWeights` defaults use position weight `1.0`, TCP-X weight `1.55`, and zero smoothness, joint-limit, and manipulability weights. This setting favors TCP-X alignment; it does not treat 1 cm and 5 degrees as equal normalized priorities. Any term with a zero weight is skipped by the planner, including its associated FK/Jacobian work when no other active term needs it. A weight of `2` doubles that term's normalized contribution; changing waypoint count does not automatically scale it. Manipulability is a negative reward. The Status text and robustness CSV report each final weighted contribution so tuning can be based on actual objective shares.
 
 ### Batch robustness test
 
-Run `python3 src/plan/scripts/III_type_task/end2end_robustness_test.py` to evaluate the complete interpolated Type-III target path for deterministic randomized core poses. Results go to `test_result_type_iii.csv`; the previous Type-III baseline remains in `test_result_baseline.csv`.
+Run `python3 src/plan/scripts/III_type_task/end2end_robustness_test.py` to evaluate the complete interpolated Type-III target path for deterministic randomized core poses. The generator samples the competition core center ranges and `(theta, phi, alpha)` orientation parameters and records version identifiers and sampled angles in each case CSV. Older case CSVs without the current position and orientation version markers are rejected instead of being silently treated as samples from the new competition distribution; specify a new `--csv` path to generate fresh cases. Defaults match the demo's path resolution and cost weights; the test applies 50 mm/30 degree thresholds separately to trajectory-average errors and per-trajectory peak errors, and computes post-plan metrics. Planner weights are configurable with the same `--position-weight`, `--axis-weight`, `--smoothness-weight`, `--joint-limit-weight`, and `--manipulability-weight` options as the demo. The CSV stores and validates the path and weight configuration; use a new `--csv` path when changing these settings rather than mixing new settings with old case results. The `quality_pass` CSV field remains an alias for peak-error pass for backward compatibility; use `average_quality_pass` and `peak_quality_pass` to distinguish the two criteria. See [TYPE_III_PLANNER_TEST_REPORT.md](./TYPE_III_PLANNER_TEST_REPORT.md) for the parameter scan, full fixed-seed comparison, holdout validation, and limitations.
 
-The saved start configuration is `joint2=1.9`, `joint3=0.5`, `joint5=-1.6` (other joints zero), but the user can drag the TCP start before planning. Hover is `core_center + hover_distance*q` with TCP-X aligned to `-q`; Insert moves along `-q` by the same configured distance to the core center; Slide moves along `+up` by its configured distance.
+Both the demo and test use the FK pose of the saved configuration (`joint2=1.9`, `joint3=0.5`, `joint5=-1.6`, other joints zero) as the default TCP start and resolve it with IK; the demo additionally lets the user drag the TCP start. The test fixes this default start for reproducible cases. Hover is `core_center + hover_distance*q` with TCP-X aligned to `-q`; Insert moves along `-q` by the same configured distance to the core center; Slide moves along `+up` by its configured distance.
 
 Turn P follows the C++ p/q/up convention: the initial radius is `radius*q`, and the sign of rotation about `p` is chosen so the initial tangent points toward `up`. Turn Q starts at the P endpoint and uses the P-terminal TCP-Z as its axis; its circle center is one radius along the P-terminal TCP-X, and positive rotation is counter-clockwise when viewed along +Z.
 

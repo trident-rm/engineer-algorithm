@@ -1,0 +1,81 @@
+{
+  "contacts": {
+    "core_contacts_over_all_steps": 3143,
+    "max_normal_force_n": 296.10598143998413,
+    "max_penetration_m": 0.026841470411925736,
+    "steps_with_contact": 2736,
+    "steps_with_core_contact": 2736,
+    "total_contacts_over_all_steps": 3143
+  },
+  "controller": {
+    "kp": 100.0,
+    "kv": 20.0,
+    "max_torque_nm": 40.0,
+    "trajectory_duration_s": 10.0,
+    "type": "MuJoCo position actuators"
+  },
+  "core": {
+    "alpha_deg": 41.19301684362469,
+    "center_m": [
+      0.42527301940932416,
+      0.047681452968451804,
+      0.3296298331330376
+    ],
+    "dimensions_m": [
+      0.14,
+      0.06,
+      0.06
+    ],
+    "phi_deg": 36.32034967275133,
+    "theta_deg": 6.214608259410642
+  },
+  "initial_fk_consistency": {
+    "position_error_m": 2.8189251450431236e-07,
+    "tcp_x_error_deg": 3.3482734016712655e-05
+  },
+  "replay_count": 1,
+  "replay_history": [
+    {
+      "action": "initial_plan",
+      "alpha_deg": 41.19301684362469,
+      "core_center_m": [
+        0.42527301940932416,
+        0.047681452968451804,
+        0.3296298331330376
+      ],
+      "phi_deg": 36.32034967275133,
+      "replay_index": 1,
+      "theta_deg": 6.214608259410642
+    }
+  ],
+  "seed": 20261019,
+  "simulation_duration_s": 10.0,
+  "simulation_samples": 5001,
+  "simulation_timestep_s": 0.002,
+  "time_series_csv": "/home/hku/robo_arm/src/plan/scripts/mujoco_sim/mujoco_type_iii_replay.csv",
+  "tracking": {
+    "actuator_force_max_nm": 40.0,
+    "joint_error_max_rad": 0.5793930288786147,
+    "joint_error_rms_rad": 0.11527548434080404,
+    "position_error_max_m": 0.19105817834744757,
+    "position_error_rms_m": 0.05563208034566384,
+    "tcp_x_error_max_deg": 14.789920125741045,
+    "tcp_x_error_rms_deg": 8.706618689457144,
+    "torque_saturated_samples": 157
+  },
+  "trajectory": {
+    "planner_iterations": 260,
+    "planner_objective": 1.3149759769439697,
+    "planner_success": true,
+    "sample_count": 41,
+    "stage_count": 5
+  },
+  "weights": {
+    "axis_alignment": 1.55,
+    "hover_endpoint_multiplier": 10.0,
+    "joint_limit": 0.0,
+    "manipulability": 0.0,
+    "position": 1.0,
+    "smoothness": 0.0
+  }
+}

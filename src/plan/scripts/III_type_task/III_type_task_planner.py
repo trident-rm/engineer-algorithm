@@ -19,9 +19,9 @@ WARM_START_KEYFRAME_INTERVAL = 5
 @dataclass(frozen=True)
 class CostWeights:
     position: float = 1.0
-    axis_alignment: float = 1.0
-    smoothness: float = 1.0
-    joint_limit: float = 1.0
+    axis_alignment: float = 1.55
+    smoothness: float = 0.0
+    joint_limit: float = 0.0
     manipulability: float = 0.0
 
 
@@ -109,21 +109,30 @@ def total_cost(
             lambda cfg: _position_with_pose(robot, cfg, link_index),
             has_aux=True,
         )(joint_positions)
-    else:
+    elif weights.position != 0.0 or weights.axis_alignment != 0.0:
         _, pose = _position_with_pose(robot, joint_positions, link_index)
 
-    cost = (
-        weights.position
-        * position_weight
-        * position_cost(pose[4:], target_position)
-        + weights.axis_alignment
-        * axis_weight
-        * axis_alignment_cost(_tcp_x_axis(pose), target_axis)
-        + weights.smoothness
-        * smoothness_cost(joint_positions, previous_joint_positions)
-        + weights.joint_limit
-        * joint_limit_cost(joint_positions, lower_limits, upper_limits)
-    )
+    cost = jnp.asarray(0.0, dtype=joint_positions.dtype)
+    if weights.position != 0.0:
+        cost = cost + (
+            weights.position
+            * position_weight
+            * position_cost(pose[4:], target_position)
+        )
+    if weights.axis_alignment != 0.0:
+        cost = cost + (
+            weights.axis_alignment
+            * axis_weight
+            * axis_alignment_cost(_tcp_x_axis(pose), target_axis)
+        )
+    if weights.smoothness != 0.0:
+        cost = cost + weights.smoothness * smoothness_cost(
+            joint_positions, previous_joint_positions
+        )
+    if weights.joint_limit != 0.0:
+        cost = cost + weights.joint_limit * joint_limit_cost(
+            joint_positions, lower_limits, upper_limits
+        )
     if weights.manipulability != 0.0:
         cost = cost + weights.manipulability * manipulability_cost(position_jacobian)
     return cost
@@ -179,31 +188,59 @@ def trajectory_cost_components(
                 has_aux=True,
             )
         )(joint_trajectory)
-    else:
+    elif weights.position != 0.0 or weights.axis_alignment != 0.0:
         link_poses = robot.forward_kinematics(joint_trajectory)[:, link_index]
 
-    tcp_positions = link_poses[:, 4:]
-    position_terms = (
-        jnp.sum(jnp.square(tcp_positions - target_positions), axis=-1)
-        / POSITION_ERROR_SCALE_M**2
-    )
-    if position_weights is not None:
-        position_terms = position_terms * jnp.asarray(position_weights)
+    zero = jnp.asarray(0.0, dtype=joint_trajectory.dtype)
+    position_term = zero
+    if weights.position != 0.0:
+        tcp_positions = link_poses[:, 4:]
+        position_terms = (
+            jnp.sum(jnp.square(tcp_positions - target_positions), axis=-1)
+            / POSITION_ERROR_SCALE_M**2
+        )
+        if position_weights is not None:
+            position_terms = position_terms * jnp.asarray(position_weights)
+        position_normalizer = (
+            jnp.asarray(joint_trajectory.shape[0], dtype=joint_trajectory.dtype)
+            if position_weights is None
+            else jnp.maximum(jnp.sum(position_weights), 1.0)
+        )
+        position_term = (
+            weights.position * jnp.sum(position_terms) / position_normalizer
+        )
 
-    tcp_x_axes = jax.vmap(_tcp_x_axis)(link_poses)
-    axis_dots = jnp.sum(tcp_x_axes * target_axes, axis=-1)
-    axis_terms = (
-        1.0 - jnp.clip(axis_dots, -1.0, 1.0)
-    ) / AXIS_ERROR_SCALE
-    if axis_weights is not None:
-        axis_terms = axis_terms * jnp.asarray(axis_weights)
+    axis_term = zero
+    if weights.axis_alignment != 0.0:
+        tcp_x_axes = jax.vmap(_tcp_x_axis)(link_poses)
+        axis_dots = jnp.sum(tcp_x_axes * target_axes, axis=-1)
+        axis_terms = (
+            1.0 - jnp.clip(axis_dots, -1.0, 1.0)
+        ) / AXIS_ERROR_SCALE
+        if axis_weights is not None:
+            axis_terms = axis_terms * jnp.asarray(axis_weights)
+        axis_normalizer = (
+            jnp.asarray(joint_trajectory.shape[0], dtype=joint_trajectory.dtype)
+            if axis_weights is None
+            else jnp.maximum(jnp.sum(axis_weights), 1.0)
+        )
+        axis_term = (
+            weights.axis_alignment * jnp.sum(axis_terms) / axis_normalizer
+        )
 
-    smoothness = jnp.mean(
-        jnp.square(joint_trajectory[1:] - joint_trajectory[:-1])
-    ) / JOINT_STEP_SCALE_RAD**2
-    limits = joint_limit_cost(joint_trajectory, lower_limits, upper_limits)
+    smoothness = zero
+    if weights.smoothness != 0.0:
+        smoothness = weights.smoothness * jnp.mean(
+            jnp.square(joint_trajectory[1:] - joint_trajectory[:-1])
+        ) / JOINT_STEP_SCALE_RAD**2
 
-    manipulability_term = jnp.asarray(0.0)
+    limits = zero
+    if weights.joint_limit != 0.0:
+        limits = weights.joint_limit * joint_limit_cost(
+            joint_trajectory, lower_limits, upper_limits
+        )
+
+    manipulability_term = zero
     if weights.manipulability != 0.0:
         position_grams = position_jacobians @ jnp.swapaxes(
             position_jacobians, -1, -2
@@ -217,22 +254,12 @@ def trajectory_cost_components(
             / MANIPULABILITY_SCALE_M3
         )
 
-    position_normalizer = (
-        jnp.asarray(joint_trajectory.shape[0], dtype=jnp.float32)
-        if position_weights is None
-        else jnp.maximum(jnp.sum(position_weights), 1.0)
-    )
-    axis_normalizer = (
-        jnp.asarray(joint_trajectory.shape[0], dtype=jnp.float32)
-        if axis_weights is None
-        else jnp.maximum(jnp.sum(axis_weights), 1.0)
-    )
     return jnp.stack(
         [
-            weights.position * jnp.sum(position_terms) / position_normalizer,
-            weights.axis_alignment * jnp.sum(axis_terms) / axis_normalizer,
-            weights.smoothness * smoothness,
-            weights.joint_limit * limits,
+            position_term,
+            axis_term,
+            smoothness,
+            limits,
             manipulability_term,
         ]
     )
